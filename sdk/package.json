@@ -1,0 +1,48 @@
+{
+  "name": "twain-middleware-sdk",
+  "version": "1.0.0",
+  "description": "TWAIN扫描仪中间件的JavaScript SDK，提供WebSocket通信接口用于控制扫描仪设备",
+  "main": "TwainMiddlewareSDK.js",
+  "types": "TwainMiddlewareSDK.d.ts",
+  "files": [
+    "TwainMiddlewareSDK.js",
+    "TwainMiddlewareSDK.d.ts",
+    "README.md",
+    "example.html"
+  ],
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "twain",
+    "scanner",
+    "middleware",
+    "websocket",
+    "sdk",
+    "javascript",
+    "typescript",
+    "scanning",
+    "image",
+    "document"
+  ],
+  "author": "TWAIN Middleware Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/twain-middleware.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/twain-middleware/issues"
+  },
+  "homepage": "https://github.com/your-org/twain-middleware#readme",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "browser": {
+    "TwainMiddlewareSDK": "./TwainMiddlewareSDK.js"
+  },
+  "devDependencies": {},
+  "dependencies": {},
+  "peerDependencies": {},
+  "optionalDependencies": {}
+} 

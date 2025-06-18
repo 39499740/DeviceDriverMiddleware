@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TWAIN扫描仪中间件 - SDK使用示例</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+
+        .status-bar.connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-bar.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .controls-section {
+            margin-bottom: 30px;
+        }
+
+        .controls-section h3 {
+            color: #333;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 5px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background-color: #1e7e34;
+        }
+
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background-color: #c82333;
+        }
+
+        .btn-warning {
+            background-color: #ffc107;
+            color: #212529;
+        }
+
+        .btn-warning:hover:not(:disabled) {
+            background-color: #e0a800;
+        }
+
+        .form-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .form-control {
+            display: flex;
+            flex-direction: column;
+            min-width: 150px;
+        }
+
+        .form-control label {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .form-control select,
+        .form-control input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .log-section {
+            margin-top: 30px;
+        }
+
+        .log-container {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            height: 200px;
+            overflow-y: auto;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+
+        .log-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .log-success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .log-error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .log-warning {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        .result-section {
+            margin-top: 30px;
+        }
+
+        .scanner-image {
+            max-width: 100%;
+            max-height: 500px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-top: 15px;
+        }
+
+        .image-info {
+            background-color: #e9ecef;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🖨️ TWAIN扫描仪中间件 SDK 示例</h1>
+        
+        <div id="statusBar" class="status-bar disconnected">
+            <span id="statusText">未连接</span>
+            <span id="statusTime"></span>
+        </div>
+
+        <div class="controls-section">
+            <h3>连接控制</h3>
+            <div class="button-group">
+                <button id="connectBtn" class="btn btn-success">🔗 连接</button>
+                <button id="disconnectBtn" class="btn btn-danger" disabled>❌ 断开连接</button>
+                <button id="pingBtn" class="btn btn-warning" disabled>💓 心跳检测</button>
+                <button id="healthBtn" class="btn btn-primary">🏥 健康检查</button>
+            </div>
+        </div>
+
+        <div class="controls-section">
+            <h3>扫描仪管理</h3>
+            <div class="button-group">
+                <button id="getScannersBtn" class="btn btn-primary" disabled>📋 获取扫描仪列表</button>
+                <button id="refreshScannersBtn" class="btn btn-primary" disabled>🔄 刷新列表</button>
+            </div>
+            
+            <div class="form-group">
+                <div class="form-control">
+                    <label for="scannerSelect">选择扫描仪:</label>
+                    <select id="scannerSelect" disabled>
+                        <option value="">请选择扫描仪</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-section">
+            <h3>扫描参数</h3>
+            <div class="form-group">
+                <div class="form-control">
+                    <label for="resolutionSelect">分辨率 (DPI):</label>
+                    <select id="resolutionSelect">
+                        <option value="75">75 DPI</option>
+                        <option value="150">150 DPI</option>
+                        <option value="300" selected>300 DPI</option>
+                        <option value="600">600 DPI</option>
+                        <option value="1200">1200 DPI</option>
+                    </select>
+                </div>
+                
+                <div class="form-control">
+                    <label for="colorModeSelect">颜色模式:</label>
+                    <select id="colorModeSelect">
+                        <option value="Color" selected>彩色</option>
+                        <option value="Gray">灰度</option>
+                        <option value="BlackWhite">黑白</option>
+                    </select>
+                </div>
+                
+                <div class="form-control">
+                    <label for="formatSelect">图像格式:</label>
+                    <select id="formatSelect">
+                        <option value="PNG" selected>PNG</option>
+                        <option value="JPEG">JPEG</option>
+                        <option value="TIFF">TIFF</option>
+                        <option value="BMP">BMP</option>
+                    </select>
+                </div>
+                
+                <div class="form-control">
+                    <label for="brightnessInput">亮度 (-1000~1000):</label>
+                    <input type="number" id="brightnessInput" value="0" min="-1000" max="1000">
+                </div>
+                
+                <div class="form-control">
+                    <label for="contrastInput">对比度 (-1000~1000):</label>
+                    <input type="number" id="contrastInput" value="0" min="-1000" max="1000">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <div class="form-control">
+                    <label>
+                        <input type="checkbox" id="showUICheck"> 显示扫描仪界面
+                    </label>
+                </div>
+                
+                <div class="form-control">
+                    <label>
+                        <input type="checkbox" id="autoRotateCheck"> 自动旋转
+                    </label>
+                </div>
+                
+                <div class="form-control">
+                    <label>
+                        <input type="checkbox" id="autoCropCheck"> 自动裁剪
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-section">
+            <h3>扫描操作</h3>
+            <div class="button-group">
+                <button id="scanBtn" class="btn btn-success" disabled>📷 开始扫描</button>
+                <button id="clearResultBtn" class="btn btn-warning">🧹 清除结果</button>
+            </div>
+        </div>
+
+        <div class="result-section">
+            <h3>扫描结果</h3>
+            <div id="scanResult">
+                <p>暂无扫描结果</p>
+            </div>
+        </div>
+
+        <div class="log-section">
+            <h3>日志记录</h3>
+            <div class="button-group">
+                <button id="clearLogBtn" class="btn btn-warning">🧹 清除日志</button>
+                <button id="exportLogBtn" class="btn btn-primary">📄 导出日志</button>
+            </div>
+            <div id="logContainer" class="log-container"></div>
+        </div>
+    </div>
+
+    <script src="TwainMiddlewareSDK.js"></script>
+    <script>
+        // 创建SDK实例
+        const twainSDK = new TwainMiddlewareSDK({
+            host: 'localhost',
+            port: 5000,
+            debug: true,
+            autoReconnect: true,
+            maxReconnectAttempts: 3
+        });
+
+        // DOM元素引用
+        const elements = {
+            statusBar: document.getElementById('statusBar'),
+            statusText: document.getElementById('statusText'),
+            statusTime: document.getElementById('statusTime'),
+            connectBtn: document.getElementById('connectBtn'),
+            disconnectBtn: document.getElementById('disconnectBtn'),
+            pingBtn: document.getElementById('pingBtn'),
+            healthBtn: document.getElementById('healthBtn'),
+            getScannersBtn: document.getElementById('getScannersBtn'),
+            refreshScannersBtn: document.getElementById('refreshScannersBtn'),
+            scanBtn: document.getElementById('scanBtn'),
+            clearResultBtn: document.getElementById('clearResultBtn'),
+            clearLogBtn: document.getElementById('clearLogBtn'),
+            exportLogBtn: document.getElementById('exportLogBtn'),
+            scannerSelect: document.getElementById('scannerSelect'),
+            resolutionSelect: document.getElementById('resolutionSelect'),
+            colorModeSelect: document.getElementById('colorModeSelect'),
+            formatSelect: document.getElementById('formatSelect'),
+            brightnessInput: document.getElementById('brightnessInput'),
+            contrastInput: document.getElementById('contrastInput'),
+            showUICheck: document.getElementById('showUICheck'),
+            autoRotateCheck: document.getElementById('autoRotateCheck'),
+            autoCropCheck: document.getElementById('autoCropCheck'),
+            scanResult: document.getElementById('scanResult'),
+            logContainer: document.getElementById('logContainer')
+        };
+
+        let scanInProgress = false;
+
+        // 日志记录函数
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+            
+            elements.logContainer.appendChild(logEntry);
+            elements.logContainer.scrollTop = elements.logContainer.scrollHeight;
+        }
+
+        // 更新UI状态
+        function updateUI(connected) {
+            const isConnected = connected && twainSDK.getConnectionState();
+            
+            elements.statusText.textContent = isConnected ? '✅ 已连接' : '❌ 未连接';
+            elements.statusTime.textContent = new Date().toLocaleTimeString();
+            elements.statusBar.className = `status-bar ${isConnected ? 'connected' : 'disconnected'}`;
+            
+            elements.connectBtn.disabled = isConnected;
+            elements.disconnectBtn.disabled = !isConnected;
+            elements.pingBtn.disabled = !isConnected;
+            elements.getScannersBtn.disabled = !isConnected;
+            elements.refreshScannersBtn.disabled = !isConnected;
+            elements.scanBtn.disabled = !isConnected || scanInProgress;
+            elements.scannerSelect.disabled = !isConnected;
+        }
+
+        // SDK事件监听器
+        twainSDK.on('connected', () => {
+            addLog('WebSocket连接已建立', 'success');
+            updateUI(true);
+            // 自动获取扫描仪列表
+            setTimeout(() => {
+                getScanners();
+            }, 500);
+        });
+
+        twainSDK.on('disconnected', (data) => {
+            addLog(`WebSocket连接已断开 (${data.code}: ${data.reason})`, 'warning');
+            updateUI(false);
+        });
+
+        twainSDK.on('error', (error) => {
+            addLog(`SDK错误: ${error.message}`, 'error');
+        });
+
+        twainSDK.on('scanStarted', (data) => {
+            addLog('扫描已开始...', 'info');
+            scanInProgress = true;
+            elements.scanBtn.innerHTML = '<div class="loading"></div>扫描中...';
+            elements.scanBtn.disabled = true;
+            elements.scanResult.innerHTML = '<p>📷 扫描进行中，请稍候...</p>';
+        });
+
+        twainSDK.on('scanCompleted', (data) => {
+            addLog('扫描完成', 'success');
+            scanInProgress = false;
+            elements.scanBtn.innerHTML = '📷 开始扫描';
+            updateUI(true);
+            
+            if (data.success && data.data) {
+                const imageData = data.data.imageData;
+                const format = data.data.format.toLowerCase();
+                const width = data.data.width;
+                const height = data.data.height;
+                const timestamp = data.data.timestamp;
+                const imageUrl = `data:image/${format};base64,${imageData}`;
+                
+                elements.scanResult.innerHTML = `
+                    <div class="image-info">
+                        <p><strong>✅ 扫描成功！</strong></p>
+                        <p>📏 尺寸: ${width} x ${height} 像素</p>
+                        <p>🖼️ 格式: ${data.data.format}</p>
+                        <p>⏰ 时间: ${timestamp}</p>
+                        <p>📊 数据大小: ${Math.round(imageData.length * 0.75 / 1024)} KB</p>
+                    </div>
+                    <img src="${imageUrl}" class="scanner-image" alt="扫描结果" />
+                `;
+                
+                addLog(`扫描成功: ${width}x${height}, ${data.data.format}, ${Math.round(imageData.length * 0.75 / 1024)}KB`, 'success');
+            } else {
+                elements.scanResult.innerHTML = `<p style="color: red;">❌ 扫描失败: ${data.message || '未知错误'}</p>`;
+                addLog(`扫描失败: ${data.message || '未知错误'}`, 'error');
+            }
+        });
+
+        // 按钮事件处理
+        elements.connectBtn.onclick = async () => {
+            try {
+                addLog('正在连接到中间件服务...', 'info');
+                await twainSDK.connect();
+            } catch (error) {
+                addLog(`连接失败: ${error.message}`, 'error');
+                alert('连接失败: ' + error.message);
+            }
+        };
+
+        elements.disconnectBtn.onclick = () => {
+            addLog('断开连接', 'info');
+            twainSDK.disconnect();
+        };
+
+        elements.pingBtn.onclick = async () => {
+            try {
+                addLog('发送心跳检测...', 'info');
+                const response = await twainSDK.ping();
+                addLog('心跳检测成功', 'success');
+            } catch (error) {
+                addLog(`心跳检测失败: ${error.message}`, 'error');
+            }
+        };
+
+        elements.healthBtn.onclick = async () => {
+            try {
+                addLog('检查服务器健康状态...', 'info');
+                const isHealthy = await twainSDK.checkHealth();
+                if (isHealthy) {
+                    addLog('服务器健康状态良好', 'success');
+                    alert('✅ 服务器运行正常');
+                } else {
+                    addLog('服务器健康检查失败', 'error');
+                    alert('❌ 服务器无响应');
+                }
+            } catch (error) {
+                addLog(`健康检查失败: ${error.message}`, 'error');
+                alert('❌ 健康检查失败: ' + error.message);
+            }
+        };
+
+        elements.getScannersBtn.onclick = getScanners;
+        elements.refreshScannersBtn.onclick = getScanners;
+
+        elements.scanBtn.onclick = async () => {
+            try {
+                const scanOptions = {
+                    scannerName: elements.scannerSelect.value || '默认扫描仪',
+                    resolution: parseInt(elements.resolutionSelect.value),
+                    colorMode: elements.colorModeSelect.value,
+                    format: elements.formatSelect.value,
+                    brightness: parseInt(elements.brightnessInput.value),
+                    contrast: parseInt(elements.contrastInput.value),
+                    showUI: elements.showUICheck.checked,
+                    autoRotate: elements.autoRotateCheck.checked,
+                    autoCrop: elements.autoCropCheck.checked
+                };
+                
+                addLog(`开始扫描，参数: ${JSON.stringify(scanOptions)}`, 'info');
+                await twainSDK.scan(scanOptions);
+            } catch (error) {
+                addLog(`扫描失败: ${error.message}`, 'error');
+                alert('扫描失败: ' + error.message);
+                scanInProgress = false;
+                elements.scanBtn.innerHTML = '📷 开始扫描';
+                updateUI(true);
+            }
+        };
+
+        elements.clearResultBtn.onclick = () => {
+            elements.scanResult.innerHTML = '<p>暂无扫描结果</p>';
+            addLog('清除扫描结果', 'info');
+        };
+
+        elements.clearLogBtn.onclick = () => {
+            elements.logContainer.innerHTML = '';
+        };
+
+        elements.exportLogBtn.onclick = () => {
+            const logs = elements.logContainer.innerText;
+            const blob = new Blob([logs], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `twain_sdk_log_${new Date().toISOString().slice(0, 19).replace(/[:-]/g, '')}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            addLog('日志已导出', 'success');
+        };
+
+        // 获取扫描仪列表
+        async function getScanners() {
+            try {
+                addLog('正在获取扫描仪列表...', 'info');
+                const scanners = await twainSDK.getScanners();
+                
+                // 清空现有选项
+                elements.scannerSelect.innerHTML = '<option value="">请选择扫描仪</option>';
+                
+                if (scanners.length === 0) {
+                    elements.scannerSelect.innerHTML += '<option value="" disabled>未找到扫描仪</option>';
+                    addLog('未找到可用的扫描仪', 'warning');
+                } else {
+                    // 添加扫描仪选项
+                    scanners.forEach(scanner => {
+                        const option = document.createElement('option');
+                        option.value = scanner;
+                        option.textContent = scanner;
+                        elements.scannerSelect.appendChild(option);
+                    });
+                    
+                    // 如果只有一个扫描仪，自动选择
+                    if (scanners.length === 1) {
+                        elements.scannerSelect.value = scanners[0];
+                    }
+                    
+                    addLog(`找到 ${scanners.length} 个扫描仪: ${scanners.join(', ')}`, 'success');
+                }
+            } catch (error) {
+                addLog(`获取扫描仪列表失败: ${error.message}`, 'error');
+                elements.scannerSelect.innerHTML = '<option value="" disabled>获取失败</option>';
+            }
+        }
+
+        // 定时更新状态时间
+        setInterval(() => {
+            if (twainSDK.getConnectionState()) {
+                elements.statusTime.textContent = new Date().toLocaleTimeString();
+            }
+        }, 1000);
+
+        // 初始化
+        updateUI(false);
+        addLog('TWAIN扫描仪中间件 SDK 示例已加载', 'info');
+        addLog('请点击"连接"按钮开始使用', 'info');
+    </script>
+</body>
+</html> 

@@ -10,14 +10,14 @@ using NTwain.Data;
 namespace TwainMiddleware
 {
     /// <summary>
-    /// TWAIN扫描仪服务类
+    /// TWAIN扫描仪服务（真实TWAIN操作）
     /// </summary>
     public class TwainService : IDisposable
     {
         private TwainSession session;
         private DataSource currentDataSource;
-        private bool isInitialized = false;
         private readonly object lockObject = new object();
+        private bool isInitialized = false;
 
         /// <summary>
         /// 初始化TWAIN服务
@@ -26,60 +26,82 @@ namespace TwainMiddleware
         {
             lock (lockObject)
             {
-                if (isInitialized)
-                    return;
-
                 try
                 {
-                    // 初始化TWAIN会话
-                    session = new TwainSession(TWIdentity.CreateFromAssembly(DataGroups.Image, 
-                        System.Reflection.Assembly.GetExecutingAssembly()));
-                    
-                    session.Open();
-                    Logger.Info("TWAIN会话已打开");
-
-                    isInitialized = true;
+                    if (!isInitialized)
+                    {
+                        Logger.Info("正在初始化TWAIN服务...");
+                        
+                        // 创建TWAIN会话
+                        session = new TwainSession(TWIdentity.CreateFromAssembly(DataGroups.Image, 
+                            System.Reflection.Assembly.GetExecutingAssembly()));
+                        
+                        // 打开TWAIN会话
+                        var result = session.Open();
+                        if (result != ReturnCode.Success)
+                        {
+                            throw new Exception("打开TWAIN会话失败: " + result.ToString());
+                        }
+                        
+                        // 配置TWAIN事件处理
+                        session.TransferReady += Session_TransferReady;
+                        session.DataTransferred += Session_DataTransferred;
+                        session.TransferError += Session_TransferError;
+                        
+                        isInitialized = true;
+                        Logger.Info("✅ TWAIN服务初始化成功");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Logger.Error($"TWAIN服务初始化失败: {ex.Message}", ex);
+                    isInitialized = false;
+                    Logger.Error("TWAIN服务初始化失败: " + ex.Message, ex);
                     throw;
                 }
             }
         }
 
         /// <summary>
-        /// 获取可用的扫描仪列表
+        /// 获取可用扫描仪列表
         /// </summary>
         /// <returns>扫描仪名称列表</returns>
         public List<string> GetScanners()
         {
             lock (lockObject)
             {
-                EnsureInitialized();
-
                 try
                 {
+                    EnsureInitialized();
+                    
                     var scanners = new List<string>();
                     
-                    foreach (var source in session.GetSources())
+                    // 获取所有数据源
+                    var dataSources = session.GetSources();
+                    
+                    foreach (var dataSource in dataSources)
                     {
-                        scanners.Add(source.Name);
+                        scanners.Add(dataSource.Name);
                     }
-
-                    Logger.Debug($"发现 {scanners.Count} 个扫描仪设备");
+                    
+                    if (scanners.Count == 0)
+                    {
+                        Logger.Warning("未找到任何TWAIN扫描仪设备");
+                        return new List<string> { "未找到扫描仪设备" };
+                    }
+                    
+                    Logger.Info("找到 " + scanners.Count.ToString() + " 个扫描仪设备: " + string.Join(", ", scanners));
                     return scanners;
                 }
                 catch (Exception ex)
                 {
-                    Logger.Error($"获取扫描仪列表失败: {ex.Message}", ex);
-                    return new List<string>();
+                    Logger.Error("获取扫描仪列表失败: " + ex.Message, ex);
+                    return new List<string> { "获取扫描仪失败: " + ex.Message };
                 }
             }
         }
 
         /// <summary>
-        /// 执行扫描操作
+        /// 执行扫描
         /// </summary>
         /// <param name="options">扫描选项</param>
         /// <returns>扫描结果</returns>
@@ -87,203 +109,359 @@ namespace TwainMiddleware
         {
             lock (lockObject)
             {
-                EnsureInitialized();
-
                 try
                 {
-                    Logger.Info($"开始扫描，参数: {options}");
+                    EnsureInitialized();
+                    Logger.Info("开始扫描，参数: " + options.ToString());
 
-                    // 选择数据源
-                    SelectDataSource(options.ScannerName);
+                    // 获取扫描仪数据源
+                    var dataSource = GetDataSource(options.ScannerName);
+                    if (dataSource == null)
+                    {
+                        return new ScanResult
+                        {
+                            Success = false,
+                            Message = "未找到扫描仪: " + options.ScannerName,
+                            Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                        };
+                    }
 
-                    // 配置扫描参数
-                    ConfigureDataSource(options);
+                    // 打开数据源
+                    var openResult = dataSource.Open();
+                    if (openResult != ReturnCode.Success)
+                    {
+                        return new ScanResult
+                        {
+                            Success = false,
+                            Message = "打开扫描仪失败: " + openResult.ToString(),
+                            Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                        };
+                    }
 
-                    // 执行扫描
-                    var result = PerformScan(options);
+                    currentDataSource = dataSource;
 
-                    Logger.Info("扫描完成");
-                    return result;
+                    try
+                    {
+                        // 配置扫描参数
+                        ConfigureScanSettings(dataSource, options);
+
+                        // 启用数据源
+                        var enableResult = dataSource.Enable(options.ShowUI ? SourceEnableMode.ShowUI : SourceEnableMode.NoUI, false, IntPtr.Zero);
+                        if (enableResult != ReturnCode.Success)
+                        {
+                            return new ScanResult
+                            {
+                                Success = false,
+                                Message = "启用扫描仪失败: " + enableResult.ToString(),
+                                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                            };
+                        }
+
+                        // 等待扫描完成
+                        var scanResult = WaitForScanCompletion();
+                        return scanResult;
+                    }
+                    finally
+                    {
+                        // 关闭数据源
+                        if (dataSource.IsOpen)
+                        {
+                            dataSource.Close();
+                        }
+                        currentDataSource = null;
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Logger.Error($"扫描失败: {ex.Message}", ex);
-                    throw;
-                }
-                finally
-                {
-                    // 关闭数据源
-                    if (currentDataSource != null && currentDataSource.IsOpen)
+                    Logger.Error("扫描失败: " + ex.Message, ex);
+                    return new ScanResult
                     {
-                        currentDataSource.Close();
-                    }
+                        Success = false,
+                        Message = ex.Message,
+                        Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                    };
                 }
             }
         }
 
         /// <summary>
-        /// 选择数据源
+        /// 获取数据源
         /// </summary>
-        private void SelectDataSource(string scannerName)
+        private DataSource GetDataSource(string scannerName)
         {
             try
             {
-                var sources = session.GetSources().ToList();
+                var dataSources = session.GetSources();
                 
                 if (string.IsNullOrEmpty(scannerName) || scannerName == "默认扫描仪")
                 {
-                    currentDataSource = sources.FirstOrDefault();
+                    return dataSources.FirstOrDefault();
                 }
-                else
-                {
-                    currentDataSource = sources.FirstOrDefault(s => s.Name.Contains(scannerName));
-                    if (currentDataSource == null)
-                    {
-                        currentDataSource = sources.FirstOrDefault();
-                    }
-                }
-
-                if (currentDataSource == null)
-                {
-                    throw new InvalidOperationException("未找到可用的扫描仪设备");
-                }
-
-                var rc = currentDataSource.Open();
-                if (rc != ReturnCode.Success)
-                {
-                    throw new InvalidOperationException($"打开扫描仪失败: {rc}");
-                }
-
-                Logger.Debug($"已选择扫描仪: {currentDataSource.Name}");
+                
+                return dataSources.FirstOrDefault(ds => ds.Name.Equals(scannerName, StringComparison.OrdinalIgnoreCase));
             }
             catch (Exception ex)
             {
-                Logger.Error($"选择数据源失败: {ex.Message}", ex);
-                throw;
+                Logger.Error("获取数据源失败: " + ex.Message, ex);
+                return null;
             }
         }
 
         /// <summary>
-        /// 配置数据源参数
+        /// 配置扫描设置
         /// </summary>
-        private void ConfigureDataSource(ScanOptions options)
+        private void ConfigureScanSettings(DataSource dataSource, ScanOptions options)
         {
             try
             {
+                Logger.Debug("配置扫描参数...");
+
                 // 设置分辨率
                 if (options.Resolution > 0)
                 {
-                    currentDataSource.Capabilities.XResolution.SetValue(options.Resolution);
-                    currentDataSource.Capabilities.YResolution.SetValue(options.Resolution);
+                    var xRes = dataSource.Capabilities.ICapXResolution;
+                    var yRes = dataSource.Capabilities.ICapYResolution;
+                    
+                    if (xRes.IsSupported)
+                    {
+                        xRes.SetValue(options.Resolution);
+                    }
+                    
+                    if (yRes.IsSupported)
+                    {
+                        yRes.SetValue(options.Resolution);
+                    }
                 }
 
                 // 设置颜色模式
-                switch (options.ColorMode?.ToLower())
+                if (!string.IsNullOrEmpty(options.ColorMode))
                 {
-                    case "color":
-                        currentDataSource.Capabilities.PixelType.SetValue(PixelType.RGB);
-                        break;
-                    case "gray":
-                        currentDataSource.Capabilities.PixelType.SetValue(PixelType.Gray);
-                        break;
-                    case "blackwhite":
-                        currentDataSource.Capabilities.PixelType.SetValue(PixelType.BlackWhite);
-                        break;
+                    var pixelType = dataSource.Capabilities.ICapPixelType;
+                    if (pixelType.IsSupported)
+                    {
+                        switch (options.ColorMode.ToLower())
+                        {
+                            case "color":
+                                pixelType.SetValue(PixelType.RGB);
+                                break;
+                            case "gray":
+                                pixelType.SetValue(PixelType.Gray);
+                                break;
+                            case "blackwhite":
+                                pixelType.SetValue(PixelType.BlackWhite);
+                                break;
+                        }
+                    }
                 }
 
                 // 设置亮度
                 if (options.Brightness != 0)
                 {
-                    var brightness = Math.Max(-1000, Math.Min(1000, options.Brightness));
-                    currentDataSource.Capabilities.Brightness.SetValue(brightness);
+                    var brightness = dataSource.Capabilities.ICapBrightness;
+                    if (brightness.IsSupported)
+                    {
+                        brightness.SetValue(options.Brightness);
+                    }
                 }
 
                 // 设置对比度
                 if (options.Contrast != 0)
                 {
-                    var contrast = Math.Max(-1000, Math.Min(1000, options.Contrast));
-                    currentDataSource.Capabilities.Contrast.SetValue(contrast);
+                    var contrast = dataSource.Capabilities.ICapContrast;
+                    if (contrast.IsSupported)
+                    {
+                        contrast.SetValue(options.Contrast);
+                    }
                 }
 
-                // 设置是否显示UI
-                currentDataSource.Capabilities.ShowUI.SetValue(options.ShowUI);
+                // 设置自动旋转（如果支持）
+                if (options.AutoRotate)
+                {
+                    try
+                    {
+                        // 尝试设置自动旋转，不同厂商的属性名可能不同
+                        var autoRotate = dataSource.Capabilities.ICapAutomaticRotate;
+                        if (autoRotate.IsSupported)
+                        {
+                            autoRotate.SetValue(BoolType.True);
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // 如果属性不支持，忽略错误
+                        Logger.Debug("扫描仪不支持自动旋转功能");
+                    }
+                }
 
                 Logger.Debug("扫描参数配置完成");
             }
             catch (Exception ex)
             {
-                Logger.Warning($"配置扫描参数时发生警告: {ex.Message}");
+                Logger.Warning("配置扫描参数时出现警告: " + ex.Message);
             }
         }
 
+        private ScanResult lastScanResult;
+        private bool scanCompleted = false;
+
         /// <summary>
-        /// 执行扫描
+        /// 等待扫描完成
         /// </summary>
-        private ScanResult PerformScan(ScanOptions options)
+        private ScanResult WaitForScanCompletion()
         {
-            try
+            scanCompleted = false;
+            lastScanResult = null;
+
+            // 等待扫描完成（最多等待30秒）
+            int timeout = 30000; // 30秒
+            int elapsed = 0;
+            int interval = 100;
+
+            while (!scanCompleted && elapsed < timeout)
             {
-                var rc = currentDataSource.Enable(SourceEnableMode.NoUI, false, IntPtr.Zero);
-                if (rc != ReturnCode.Success)
-                {
-                    throw new InvalidOperationException($"启用数据源失败: {rc}");
-                }
-
-                // 获取图像数据
-                var transfers = currentDataSource.GetDataTransfers().ToList();
-                if (!transfers.Any())
-                {
-                    throw new InvalidOperationException("未获取到扫描图像");
-                }
-
-                var imageData = transfers.First();
+                System.Threading.Thread.Sleep(interval);
+                elapsed += interval;
                 
-                // 转换为所需格式
-                string base64Data = ConvertImageToBase64(imageData, options.Format);
-
-                return new ScanResult
-                {
-                    Success = true,
-                    Format = options.Format,
-                    Width = imageData.ImageInfo.ImageWidth,
-                    Height = imageData.ImageInfo.ImageLength,
-                    ImageData = base64Data,
-                    Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-                };
+                // 处理Windows消息
+                System.Windows.Forms.Application.DoEvents();
             }
-            catch (Exception ex)
+
+            if (!scanCompleted)
             {
-                Logger.Error($"执行扫描失败: {ex.Message}", ex);
                 return new ScanResult
                 {
                     Success = false,
-                    Message = ex.Message,
+                    Message = "扫描超时",
                     Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
                 };
+            }
+
+            return lastScanResult ?? new ScanResult
+            {
+                Success = false,
+                Message = "扫描结果未知",
+                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+            };
+        }
+
+        /// <summary>
+        /// 传输准备事件
+        /// </summary>
+        private void Session_TransferReady(object sender, TransferReadyEventArgs e)
+        {
+            Logger.Debug("扫描传输准备就绪");
+        }
+
+        /// <summary>
+        /// 数据传输事件
+        /// </summary>
+        private void Session_DataTransferred(object sender, DataTransferredEventArgs e)
+        {
+            try
+            {
+                Logger.Debug("接收到扫描数据");
+
+                if (e.NativeData != IntPtr.Zero)
+                {
+                    // 从本机数据创建位图
+                    var imageStream = e.GetNativeImageStream();
+                    if (imageStream != null)
+                    {
+                        using (imageStream)
+                        {
+                            // 从流创建位图
+                            using (var bitmap = new Bitmap(imageStream))
+                            {
+                                // 转换为Base64
+                                string imageData = ConvertBitmapToBase64(bitmap, "png");
+                                
+                                lastScanResult = new ScanResult
+                                {
+                                    Success = true,
+                                    Format = "png",
+                                    Width = bitmap.Width,
+                                    Height = bitmap.Height,
+                                    ImageData = imageData,
+                                    Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                                    Message = "扫描完成"
+                                };
+                            }
+                        }
+                    }
+                }
+                else if (e.FileDataPath != null)
+                {
+                    // 从文件路径读取
+                    if (File.Exists(e.FileDataPath))
+                    {
+                        byte[] fileBytes = File.ReadAllBytes(e.FileDataPath);
+                        string imageData = Convert.ToBase64String(fileBytes);
+                        
+                        using (var bitmap = new Bitmap(e.FileDataPath))
+                        {
+                            lastScanResult = new ScanResult
+                            {
+                                Success = true,
+                                Format = Path.GetExtension(e.FileDataPath).TrimStart('.').ToLower(),
+                                Width = bitmap.Width,
+                                Height = bitmap.Height,
+                                ImageData = imageData,
+                                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                                Message = "扫描完成"
+                            };
+                        }
+                    }
+                }
+
+                scanCompleted = true;
+                Logger.Info("扫描数据处理完成");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("处理扫描数据失败: " + ex.Message, ex);
+                lastScanResult = new ScanResult
+                {
+                    Success = false,
+                    Message = "处理扫描数据失败: " + ex.Message,
+                    Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                };
+                scanCompleted = true;
             }
         }
 
         /// <summary>
-        /// 将图像转换为Base64字符串
+        /// 传输错误事件
         /// </summary>
-        private string ConvertImageToBase64(ImageData imageData, string format)
+        private void Session_TransferError(object sender, TransferErrorEventArgs e)
+        {
+            Logger.Error("扫描传输错误: " + (e.Exception != null ? e.Exception.Message : e.ReturnCode.ToString()));
+            lastScanResult = new ScanResult
+            {
+                Success = false,
+                Message = "扫描传输错误: " + (e.Exception != null ? e.Exception.Message : e.ReturnCode.ToString()),
+                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+            };
+            scanCompleted = true;
+        }
+
+        /// <summary>
+        /// 将位图转换为Base64字符串
+        /// </summary>
+        private string ConvertBitmapToBase64(Bitmap bitmap, string format)
         {
             try
             {
-                using (var bitmap = imageData.GetNativeImage())
+                using (var ms = new MemoryStream())
                 {
-                    using (var ms = new MemoryStream())
-                    {
-                        ImageFormat imageFormat = GetImageFormat(format);
-                        bitmap.Save(ms, imageFormat);
-                        byte[] imageBytes = ms.ToArray();
-                        return Convert.ToBase64String(imageBytes);
-                    }
+                    ImageFormat imageFormat = GetImageFormat(format);
+                    bitmap.Save(ms, imageFormat);
+                    byte[] imageBytes = ms.ToArray();
+                    return Convert.ToBase64String(imageBytes);
                 }
             }
             catch (Exception ex)
             {
-                Logger.Error($"图像转换失败: {ex.Message}", ex);
+                Logger.Error("图像格式转换失败: " + ex.Message, ex);
                 throw;
             }
         }
@@ -293,7 +471,11 @@ namespace TwainMiddleware
         /// </summary>
         private ImageFormat GetImageFormat(string format)
         {
-            switch (format?.ToUpper())
+            if (string.IsNullOrEmpty(format))
+                return ImageFormat.Png;
+
+            string upperFormat = format.ToUpper();
+            switch (upperFormat)
             {
                 case "PNG":
                     return ImageFormat.Png;
@@ -317,7 +499,7 @@ namespace TwainMiddleware
         {
             if (!isInitialized)
             {
-                throw new InvalidOperationException("TWAIN服务未初始化");
+                throw new InvalidOperationException("TWAIN服务尚未初始化");
             }
         }
 
@@ -336,7 +518,7 @@ namespace TwainMiddleware
                         currentDataSource = null;
                     }
 
-                    if (session != null && session.IsOpened)
+                    if (session != null)
                     {
                         session.Close();
                         session = null;
@@ -347,7 +529,7 @@ namespace TwainMiddleware
                 }
                 catch (Exception ex)
                 {
-                    Logger.Error($"释放TWAIN服务失败: {ex.Message}", ex);
+                    Logger.Error("释放TWAIN服务时出错: " + ex.Message, ex);
                 }
             }
         }
@@ -358,19 +540,32 @@ namespace TwainMiddleware
     /// </summary>
     public class ScanOptions
     {
-        public string ScannerName { get; set; } = "默认扫描仪";
-        public int Resolution { get; set; } = 300;
-        public string ColorMode { get; set; } = "Color";
-        public string Format { get; set; } = "PNG";
-        public bool ShowUI { get; set; } = false;
-        public int Brightness { get; set; } = 0;
-        public int Contrast { get; set; } = 0;
-        public bool AutoRotate { get; set; } = false;
-        public bool AutoCrop { get; set; } = false;
+        public string ScannerName { get; set; }
+        public int Resolution { get; set; }
+        public string ColorMode { get; set; }
+        public string Format { get; set; }
+        public bool ShowUI { get; set; }
+        public int Brightness { get; set; }
+        public int Contrast { get; set; }
+        public bool AutoRotate { get; set; }
+        public bool AutoCrop { get; set; }
+
+        public ScanOptions()
+        {
+            ScannerName = "默认扫描仪";
+            Resolution = 200;
+            ColorMode = "color";
+            Format = "png";
+            ShowUI = false;
+            Brightness = 0;
+            Contrast = 0;
+            AutoRotate = false;
+            AutoCrop = false;
+        }
 
         public override string ToString()
         {
-            return $"Scanner={ScannerName}, Resolution={Resolution}, ColorMode={ColorMode}, Format={Format}";
+            return "扫描仪=" + ScannerName + ", 分辨率=" + Resolution.ToString() + "DPI, 颜色=" + ColorMode + ", 格式=" + Format + ", 界面=" + ShowUI.ToString() + ", 亮度=" + Brightness.ToString() + ", 对比度=" + Contrast.ToString() + ", 自动旋转=" + AutoRotate.ToString() + ", 自动裁剪=" + AutoCrop.ToString();
         }
     }
 
@@ -387,4 +582,4 @@ namespace TwainMiddleware
         public string ImageData { get; set; }
         public string Timestamp { get; set; }
     }
-} 
+}

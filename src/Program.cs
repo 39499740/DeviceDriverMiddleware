@@ -10,8 +10,7 @@ namespace TwainMiddleware
     static class Program
     {
         private static TrayManager trayManager;
-        private static WebSocketServer webSocketServer;
-        private static HttpServer httpServer;
+        private static WebSocketServerWrapper webSocketServer;
         private static TwainService twainService;
         private static Mutex mutex;
 
@@ -49,13 +48,10 @@ namespace TwainMiddleware
                 twainService = new TwainService();
                 
                 // 初始化WebSocket服务器
-                webSocketServer = new WebSocketServer(twainService);
-                
-                // 初始化HTTP服务器
-                httpServer = new HttpServer(twainService);
+                webSocketServer = new WebSocketServerWrapper();
                 
                 // 初始化托盘管理器
-                trayManager = new TrayManager(webSocketServer, httpServer);
+                trayManager = new TrayManager(webSocketServer);
 
                 // 设置应用程序退出事件
                 Application.ApplicationExit += Application_ApplicationExit;
@@ -68,14 +64,17 @@ namespace TwainMiddleware
             }
             catch (Exception ex)
             {
-                Logger.Error($"程序启动失败: {ex.Message}", ex);
-                MessageBox.Show($"程序启动失败: {ex.Message}", "错误", 
+                Logger.Error("程序启动失败: " + ex.Message, ex);
+                MessageBox.Show("程序启动失败: " + ex.Message, "错误", 
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {
-                mutex?.ReleaseMutex();
-                mutex?.Dispose();
+                if (mutex != null)
+                {
+                    mutex.ReleaseMutex();
+                    mutex.Dispose();
+                }
             }
         }
 
@@ -92,11 +91,7 @@ namespace TwainMiddleware
 
                 // 启动WebSocket服务器
                 webSocketServer.Start();
-                Logger.Info($"WebSocket服务器已启动，端口: {Config.WebSocketPort}");
-
-                // 启动HTTP服务器
-                httpServer.Start();
-                Logger.Info($"HTTP服务器已启动，端口: {Config.HttpPort}");
+                Logger.Info("WebSocket服务器已启动，端口: " + Config.WebSocketPort.ToString());
 
                 // 显示托盘图标
                 trayManager.Show();
@@ -106,13 +101,13 @@ namespace TwainMiddleware
                 if (Config.ShowTrayNotifications)
                 {
                     trayManager.ShowNotification("TWAIN扫描仪中间件", 
-                        $"服务已启动，端口: {Config.WebSocketPort}",
+                        "服务已启动，端口: " + Config.WebSocketPort.ToString(),
                         ToolTipIcon.Info);
                 }
             }
             catch (Exception ex)
             {
-                Logger.Error($"服务启动失败: {ex.Message}", ex);
+                Logger.Error("服务启动失败: " + ex.Message, ex);
                 throw;
             }
         }
@@ -126,23 +121,21 @@ namespace TwainMiddleware
             {
                 Logger.Info("正在停止服务...");
 
-                // 停止HTTP服务器
-                httpServer?.Stop();
-                Logger.Info("HTTP服务器已停止");
-
                 // 停止WebSocket服务器
-                webSocketServer?.Stop();
+                if (webSocketServer != null)
+                    webSocketServer.Stop();
                 Logger.Info("WebSocket服务器已停止");
 
                 // 停止TWAIN服务
-                twainService?.Dispose();
+                if (twainService != null)
+                    twainService.Dispose();
                 Logger.Info("TWAIN服务已停止");
 
                 Logger.Info("所有服务已停止");
             }
             catch (Exception ex)
             {
-                Logger.Error($"停止服务时发生错误: {ex.Message}", ex);
+                Logger.Error("停止服务时发生错误: " + ex.Message, ex);
             }
         }
 
@@ -161,8 +154,7 @@ namespace TwainMiddleware
                 Config.Reload();
                 
                 // 重新创建服务实例
-                webSocketServer = new WebSocketServer(twainService);
-                httpServer = new HttpServer(twainService);
+                webSocketServer = new WebSocketServerWrapper();
                 
                 StartServices();
                 
@@ -170,7 +162,7 @@ namespace TwainMiddleware
             }
             catch (Exception ex)
             {
-                Logger.Error($"重启服务失败: {ex.Message}", ex);
+                Logger.Error("重启服务失败: " + ex.Message, ex);
                 throw;
             }
         }
@@ -181,7 +173,8 @@ namespace TwainMiddleware
         private static void Application_ApplicationExit(object sender, EventArgs e)
         {
             StopServices();
-            trayManager?.Hide();
+            if (trayManager != null)
+                trayManager.Hide();
             Logger.Info("TWAIN扫描仪中间件已退出");
         }
 

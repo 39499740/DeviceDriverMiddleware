@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Configuration;
 using System.IO;
 
@@ -9,80 +9,79 @@ namespace TwainMiddleware
     /// </summary>
     public static class Config
     {
-        #region WebSocket配置
         /// <summary>
         /// WebSocket服务器端口
         /// </summary>
-        public static int WebSocketPort { get; private set; } = 45677;
+        public static int WebSocketPort { get; private set; }
 
         /// <summary>
-        /// WebSocket服务器主机地址
+        /// WebSocket服务器主机
         /// </summary>
-        public static string WebSocketHost { get; private set; } = "localhost";
-        #endregion
+        public static string WebSocketHost { get; private set; }
 
-        #region HTTP配置
-        /// <summary>
-        /// HTTP服务器端口
-        /// </summary>
-        public static int HttpPort { get; private set; } = 45677;
-
-        /// <summary>
-        /// HTTP服务器主机地址
-        /// </summary>
-        public static string HttpHost { get; private set; } = "localhost";
-        #endregion
-
-        #region 日志配置
         /// <summary>
         /// 日志级别
         /// </summary>
-        public static string LogLevel { get; private set; } = "Info";
+        public static string LogLevel { get; private set; }
 
         /// <summary>
         /// 是否记录到文件
         /// </summary>
-        public static bool LogToFile { get; private set; } = true;
+        public static bool LogToFile { get; private set; }
 
         /// <summary>
         /// 日志文件路径
         /// </summary>
-        public static string LogFilePath { get; private set; } = "logs\\twain-middleware.log";
-        #endregion
+        public static string LogFilePath { get; private set; }
 
-        #region TWAIN配置
         /// <summary>
         /// 默认分辨率
         /// </summary>
-        public static int DefaultResolution { get; private set; } = 300;
+        public static int DefaultResolution { get; private set; }
 
         /// <summary>
         /// 默认颜色模式
         /// </summary>
-        public static string DefaultColorMode { get; private set; } = "Color";
+        public static string DefaultColorMode { get; private set; }
 
         /// <summary>
         /// 默认图像格式
         /// </summary>
-        public static string DefaultFormat { get; private set; } = "PNG";
-        #endregion
+        public static string DefaultFormat { get; private set; }
 
-        #region 系统配置
         /// <summary>
         /// 是否自动启动服务
         /// </summary>
-        public static bool AutoStartService { get; private set; } = true;
+        public static bool AutoStartService { get; private set; }
 
         /// <summary>
         /// 是否最小化到托盘
         /// </summary>
-        public static bool MinimizeToTray { get; private set; } = true;
+        public static bool MinimizeToTray { get; private set; }
 
         /// <summary>
         /// 是否显示托盘通知
         /// </summary>
-        public static bool ShowTrayNotifications { get; private set; } = true;
-        #endregion
+        public static bool ShowTrayNotifications { get; private set; }
+
+        /// <summary>
+        /// 静态构造函数 - 设置默认值
+        /// </summary>
+        static Config()
+        {
+            // 设置默认值
+            WebSocketPort = 45677;
+            WebSocketHost = "localhost";
+            LogLevel = "Info";
+            LogToFile = true;
+            LogFilePath = "logs\\twain-middleware.log";
+            DefaultResolution = 300;
+            DefaultColorMode = "Color";
+            DefaultFormat = "PNG";
+            AutoStartService = true;
+            MinimizeToTray = true;
+            ShowTrayNotifications = true;
+        }
 
         /// <summary>
         /// 初始化配置
@@ -97,7 +96,7 @@ namespace TwainMiddleware
             }
             catch (Exception ex)
             {
-                throw new ConfigurationErrorsException($"配置初始化失败: {ex.Message}", ex);
+                throw new ConfigurationErrorsException("配置初始化失败: " + ex.Message, ex);
             }
         }
 
@@ -114,7 +113,7 @@ namespace TwainMiddleware
             }
             catch (Exception ex)
             {
-                throw new ConfigurationErrorsException($"配置重新加载失败: {ex.Message}", ex);
+                throw new ConfigurationErrorsException("配置重新加载失败: " + ex.Message, ex);
             }
         }
 
@@ -126,10 +125,6 @@ namespace TwainMiddleware
             // WebSocket配置
             WebSocketPort = GetIntSetting("WebSocketPort", 45677);
             WebSocketHost = GetStringSetting("WebSocketHost", "localhost");
-
-            // HTTP配置
-            HttpPort = GetIntSetting("HttpPort", 45677);
-            HttpHost = GetStringSetting("HttpHost", "localhost");
 
             // 日志配置
             LogLevel = GetStringSetting("LogLevel", "Info");
@@ -154,22 +149,19 @@ namespace TwainMiddleware
         {
             // 验证端口号
             if (WebSocketPort < 1 || WebSocketPort > 65535)
-                throw new ConfigurationErrorsException($"WebSocket端口号无效: {WebSocketPort}");
-
-            if (HttpPort < 1 || HttpPort > 65535)
-                throw new ConfigurationErrorsException($"HTTP端口号无效: {HttpPort}");
+                throw new ConfigurationErrorsException("WebSocket端口号无效: " + WebSocketPort);
 
             // 验证分辨率
             if (DefaultResolution < 50 || DefaultResolution > 2400)
-                throw new ConfigurationErrorsException($"默认分辨率无效: {DefaultResolution}");
+                throw new ConfigurationErrorsException("默认分辨率无效: " + DefaultResolution);
 
             // 验证颜色模式
             if (DefaultColorMode != "Color" && DefaultColorMode != "Gray" && DefaultColorMode != "BlackWhite")
-                throw new ConfigurationErrorsException($"默认颜色模式无效: {DefaultColorMode}");
+                throw new ConfigurationErrorsException("默认颜色模式无效: " + DefaultColorMode);
 
             // 验证图像格式
             if (DefaultFormat != "PNG" && DefaultFormat != "JPEG" && DefaultFormat != "TIFF" && DefaultFormat != "BMP")
-                throw new ConfigurationErrorsException($"默认图像格式无效: {DefaultFormat}");
+                throw new ConfigurationErrorsException("默认图像格式无效: " + DefaultFormat);
         }
 
         /// <summary>
@@ -191,7 +183,7 @@ namespace TwainMiddleware
             }
             catch (Exception ex)
             {
-                throw new ConfigurationErrorsException($"创建目录失败: {ex.Message}", ex);
+                throw new ConfigurationErrorsException("创建目录失败: " + ex.Message, ex);
             }
         }
 
@@ -202,13 +194,10 @@ namespace TwainMiddleware
         public static void UpdateWebSocketPort(int port)
         {
             if (port < 1 || port > 65535)
-                throw new ArgumentException($"端口号无效: {port}");
+                throw new ArgumentException("端口号无效: " + port);
 
             WebSocketPort = port;
-            HttpPort = port; // HTTP和WebSocket使用同一端口
-
             UpdateAppSetting("WebSocketPort", port.ToString());
-            UpdateAppSetting("HttpPort", port.ToString());
         }
 
         /// <summary>
@@ -229,7 +218,8 @@ namespace TwainMiddleware
             if (string.IsNullOrEmpty(value))
                 return defaultValue;
 
-            if (int.TryParse(value, out int result))
+            int result;
+            if (int.TryParse(value, out result))
                 return result;
 
             return defaultValue;
@@ -244,7 +234,8 @@ namespace TwainMiddleware
             if (string.IsNullOrEmpty(value))
                 return defaultValue;
 
-            if (bool.TryParse(value, out bool result))
+            bool result;
+            if (bool.TryParse(value, out result))
                 return result;
 
             return defaultValue;
@@ -269,7 +260,7 @@ namespace TwainMiddleware
             }
             catch (Exception ex)
             {
-                throw new ConfigurationErrorsException($"更新配置失败: {ex.Message}", ex);
+                throw new ConfigurationErrorsException("更新配置失败: " + ex.Message, ex);
             }
         }
     }

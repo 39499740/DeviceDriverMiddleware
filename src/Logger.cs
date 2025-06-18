@@ -38,7 +38,8 @@ namespace TwainMiddleware
                 try
                 {
                     // 解析日志级别
-                    if (Enum.TryParse(Config.LogLevel, true, out LogLevel level))
+                    LogLevel level;
+                    if (Enum.TryParse(Config.LogLevel, true, out level))
                         currentLogLevel = level;
 
                     // 初始化文件日志
@@ -53,7 +54,7 @@ namespace TwainMiddleware
                 catch (Exception ex)
                 {
                     // 如果日志初始化失败，至少输出到控制台
-                    Console.WriteLine($"日志系统初始化失败: {ex.Message}");
+                    Console.WriteLine("日志系统初始化失败: " + ex.Message);
                 }
             }
         }
@@ -91,7 +92,7 @@ namespace TwainMiddleware
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"文件日志初始化失败: {ex.Message}");
+                Console.WriteLine("文件日志初始化失败: " + ex.Message);
                 fileWriter = null;
             }
         }
@@ -152,20 +153,20 @@ namespace TwainMiddleware
                     string threadId = Thread.CurrentThread.ManagedThreadId.ToString("D3");
                     string levelStr = level.ToString().ToUpper().PadRight(7);
                     
-                    string logMessage = $"[{timestamp}] [{threadId}] [{levelStr}] {message}";
+                    string logMessage = "[" + timestamp + "] [" + threadId + "] [" + levelStr + "] " + message;
 
                     // 添加异常信息
                     if (exception != null)
                     {
-                        logMessage += Environment.NewLine + $"异常类型: {exception.GetType().Name}";
-                        logMessage += Environment.NewLine + $"异常信息: {exception.Message}";
-                        logMessage += Environment.NewLine + $"堆栈跟踪: {exception.StackTrace}";
+                        logMessage += Environment.NewLine + "异常类型: " + exception.GetType().Name;
+                        logMessage += Environment.NewLine + "异常信息: " + exception.Message;
+                        logMessage += Environment.NewLine + "堆栈跟踪: " + exception.StackTrace;
                         
                         // 内部异常
                         Exception innerEx = exception.InnerException;
                         while (innerEx != null)
                         {
-                            logMessage += Environment.NewLine + $"内部异常: {innerEx.Message}";
+                            logMessage += Environment.NewLine + "内部异常: " + innerEx.Message;
                             innerEx = innerEx.InnerException;
                         }
                     }
@@ -182,8 +183,8 @@ namespace TwainMiddleware
                 catch (Exception ex)
                 {
                     // 如果日志记录失败，输出到控制台
-                    Console.WriteLine($"日志记录失败: {ex.Message}");
-                    Console.WriteLine($"原始消息: {message}");
+                                    Console.WriteLine("日志记录失败: " + ex.Message);
+                Console.WriteLine("原始消息: " + message);
                 }
             }
         }
@@ -207,7 +208,7 @@ namespace TwainMiddleware
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"日志清理失败: {ex.Message}");
+                    Console.WriteLine("日志清理失败: " + ex.Message);
                 }
             }
         }
@@ -218,7 +219,7 @@ namespace TwainMiddleware
         public static void SetLogLevel(LogLevel level)
         {
             currentLogLevel = level;
-            Info($"日志级别已设置为: {level}");
+            Info("日志级别已设置为: " + level);
         }
 
         /// <summary>

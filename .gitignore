@@ -150,3 +150,5 @@ Thumbs.db
 # 构建脚本生成的文件
 build.log
 error.log 
+
+bin/

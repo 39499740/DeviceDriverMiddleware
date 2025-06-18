@@ -39,9 +39,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
 
-  <PropertyGroup>
-    <ApplicationIcon>twain.ico</ApplicationIcon>
-  </PropertyGroup>
+
 
   <PropertyGroup>
     <StartupObject />
@@ -50,22 +48,24 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Configuration" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Web" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
+    <Reference Include="Microsoft.VisualBasic" />
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
     <Reference Include="Newtonsoft.Json">
       <HintPath>..\packages\Newtonsoft.Json.13.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="NTwain">
-      <HintPath>..\packages\NTwain.3.8.0\lib\net45\NTwain.dll</HintPath>
+      <HintPath>..\packages\NTwain.3.7.5\lib\net40\NTwain.dll</HintPath>
     </Reference>
     <Reference Include="websocket-sharp">
-      <HintPath>..\packages\WebSocketSharp.1.0.3-rc11\lib\websocket-sharp.dll</HintPath>
+      <HintPath>..\packages\WebSocketSharp-NonPreRelease.1.0.0\lib\net35\websocket-sharp.dll</HintPath>
     </Reference>
   </ItemGroup>
 
@@ -73,7 +73,6 @@
     <Compile Include="Program.cs" />
     <Compile Include="TwainService.cs" />
     <Compile Include="WebSocketServer.cs" />
-    <Compile Include="HttpServer.cs" />
     <Compile Include="TrayManager.cs" />
     <Compile Include="Config.cs" />
     <Compile Include="Logger.cs" />
@@ -85,9 +84,7 @@
     <None Include="packages.config" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Content Include="twain.ico" />
-  </ItemGroup>
+
 
   <ItemGroup>
     <Folder Include="Properties\" />

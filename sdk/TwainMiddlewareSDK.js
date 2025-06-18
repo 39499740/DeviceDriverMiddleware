@@ -7,10 +7,10 @@ class TwainMiddlewareSDK {
     constructor(options = {}) {
         this.options = {
             host: options.host || 'localhost',
-            port: options.port || 5000,
-            autoReconnect: options.autoReconnect !== false,
+            port: options.port || 45677,
+            autoReconnect: options.autoReconnect || true,
             reconnectInterval: options.reconnectInterval || 3000,
-            maxReconnectAttempts: options.maxReconnectAttempts || 5,
+            maxReconnectAttempts: options.maxReconnectAttempts || 3,
             debug: options.debug || false
         };
 
@@ -36,7 +36,7 @@ class TwainMiddlewareSDK {
      */
     connect() {
         return new Promise((resolve, reject) => {
-            const wsUrl = `ws://${this.options.host}:${this.options.port}/scan`;
+            const wsUrl = `ws://${this.options.host}:${this.options.port}/twain`;
             this.log('正在连接到:', wsUrl);
 
             try {
@@ -117,14 +117,21 @@ class TwainMiddlewareSDK {
 
             const requestId = `req-${++this.requestId}`;
             const command = {
-                action,
-                data,
-                requestId,
-                timestamp: new Date().toISOString()
+                Id: requestId,
+                Action: action,
+                Data: data
             };
 
             // 存储回调函数
             this.requestCallbacks.set(requestId, { resolve, reject });
+
+            // 设置超时
+            setTimeout(() => {
+                if (this.requestCallbacks.has(requestId)) {
+                    this.requestCallbacks.delete(requestId);
+                    reject(new Error('请求超时'));
+                }
+            }, 10000); // 10秒超时
 
             // 发送命令
             try {
@@ -143,8 +150,8 @@ class TwainMiddlewareSDK {
      */
     async getScanners() {
         try {
-            const response = await this.sendCommand('get_scanners');
-            return response.data || [];
+            const response = await this.sendCommand('getscanners');
+            return response.Data || [];
         } catch (error) {
             this.log('获取扫描仪列表失败:', error);
             throw error;
@@ -158,23 +165,25 @@ class TwainMiddlewareSDK {
      */
     async scan(options = {}) {
         const scanOptions = {
-            scannerName: options.scannerName || '默认扫描仪',
-            resolution: options.resolution || 300,
-            colorMode: options.colorMode || 'Color',
-            format: options.format || 'PNG',
-            showUI: options.showUI || false,
-            brightness: options.brightness || 0,
-            contrast: options.contrast || 0,
-            autoRotate: options.autoRotate || false,
-            autoCrop: options.autoCrop || false,
-            ...options
+            ScannerName: options.scannerName || '默认扫描仪',
+            Resolution: options.resolution || 300,
+            ColorMode: options.colorMode || 'Color',
+            Format: options.format || 'PNG',
+            ShowUI: options.showUI || false,
+            Brightness: options.brightness || 0,
+            Contrast: options.contrast || 0,
+            AutoRotate: options.autoRotate || false,
+            AutoCrop: options.autoCrop || false
         };
 
         try {
+            this.emit('scanStarted', { scannerName: scanOptions.ScannerName });
             const response = await this.sendCommand('scan', scanOptions);
+            this.emit('scanCompleted', response);
             return response;
         } catch (error) {
             this.log('扫描失败:', error);
+            this.emit('scanCompleted', { success: false, message: error.message });
             throw error;
         }
     }
@@ -203,14 +212,14 @@ class TwainMiddlewareSDK {
             this.log('收到响应:', response);
 
             // 处理有请求ID的响应
-            if (response.requestId && this.requestCallbacks.has(response.requestId)) {
-                const callback = this.requestCallbacks.get(response.requestId);
-                this.requestCallbacks.delete(response.requestId);
+            if (response.Id && this.requestCallbacks.has(response.Id)) {
+                const callback = this.requestCallbacks.get(response.Id);
+                this.requestCallbacks.delete(response.Id);
 
-                if (response.success) {
+                if (response.Success) {
                     callback.resolve(response);
                 } else {
-                    callback.reject(new Error(response.message || '操作失败'));
+                    callback.reject(new Error(response.Message || '操作失败'));
                 }
                 return;
             }
@@ -313,8 +322,8 @@ class TwainMiddlewareSDK {
      */
     async checkHealth() {
         try {
-            const response = await fetch(`http://${this.options.host}:${this.options.port}/health`);
-            return response.ok;
+            await this.ping();
+            return true;
         } catch (error) {
             this.log('健康检查失败:', error);
             return false;
@@ -334,6 +343,14 @@ class TwainMiddlewareSDK {
             this.log('HTTP获取扫描仪列表失败:', error);
             throw error;
         }
+    }
+
+    /**
+     * 获取SDK版本信息
+     * @returns {string}
+     */
+    getVersion() {
+        return '1.0.0';
     }
 }
 

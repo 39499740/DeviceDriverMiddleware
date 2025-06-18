@@ -73,6 +73,7 @@
     <Compile Include="Program.cs" />
     <Compile Include="TwainService.cs" />
     <Compile Include="WebSocketServer.cs" />
+    <Compile Include="HttpServer.cs" />
     <Compile Include="TrayManager.cs" />
     <Compile Include="Config.cs" />
     <Compile Include="Logger.cs" />

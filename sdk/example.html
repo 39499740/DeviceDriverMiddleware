@@ -308,10 +308,6 @@
                     <label>&nbsp;</label>
                     <button class="btn btn-secondary" id="updateConfigBtn">更新配置</button>
                 </div>
-                <div class="config-input">
-                    <label>&nbsp;</label>
-                    <button class="btn btn-warning" id="detectPortBtn">自动检测端口</button>
-                </div>
             </div>
             <div class="alert alert-info">
                 💡 默认端口为 45677。如果中间件使用了其他端口，请在此处修改配置。
@@ -503,7 +499,6 @@
             hostInput: document.getElementById('hostInput'),
             portInput: document.getElementById('portInput'),
             updateConfigBtn: document.getElementById('updateConfigBtn'),
-            detectPortBtn: document.getElementById('detectPortBtn'),
             statusBar: document.getElementById('statusBar'),
             statusText: document.getElementById('statusText'),
             statusTime: document.getElementById('statusTime'),
@@ -619,61 +614,6 @@
             addLog(`配置已更新: ${currentConfig.host}:${currentConfig.port}`, 'info');
         }
 
-        // 自动检测端口
-        async function detectPort() {
-            const urlPort = getPortFromUrl();
-            const commonPorts = [urlPort, 45677, 5000, 8080, 3000, 9090].filter((port, index, arr) => 
-                port && arr.indexOf(port) === index && port !== 80 && port !== 443
-            );
-            const host = elements.hostInput.value.trim() || 'localhost';
-            
-            addLog('正在自动检测可用端口...', 'info');
-            
-            for (const port of commonPorts) {
-                try {
-                    addLog(`测试端口 ${port}...`, 'info');
-                    const ws = new WebSocket(`ws://${host}:${port}/twain`);
-                    
-                    const result = await new Promise((resolve, reject) => {
-                        const timeout = setTimeout(() => {
-                            ws.close();
-                            reject(new Error('timeout'));
-                        }, 3000);
-                        
-                        ws.onopen = () => {
-                            clearTimeout(timeout);
-                            ws.close();
-                            resolve(port);
-                        };
-                        
-                        ws.onerror = () => {
-                            clearTimeout(timeout);
-                            reject(new Error('connection failed'));
-                        };
-                        
-                        ws.onclose = (event) => {
-                            clearTimeout(timeout);
-                            if (event.code === 1000) {
-                                resolve(port);
-                            } else {
-                                reject(new Error(`close code: ${event.code}`));
-                            }
-                        };
-                    });
-                    
-                    // 找到可用端口
-                    elements.portInput.value = result;
-                    addLog(`✅ 检测到可用端口: ${result}`, 'success');
-                    updateConfig();
-                    return;
-                } catch (error) {
-                    addLog(`❌ 端口 ${port} 不可用: ${error.message}`, 'warning');
-                }
-            }
-            
-            addLog('❌ 未检测到可用端口，请检查中间件是否运行并手动配置', 'error');
-        }
-
         // 设置SDK事件监听器
         function setupSDKEventListeners() {
             twainSDK.on('connected', () => {
@@ -776,7 +716,6 @@
 
         // 事件监听器设置
         elements.updateConfigBtn.onclick = updateConfig;
-        elements.detectPortBtn.onclick = detectPort;
 
         elements.connectBtn.onclick = async () => {
             try {

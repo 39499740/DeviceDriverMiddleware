@@ -138,7 +138,7 @@
         <h1>TWAIN扫描仪中间件测试页面</h1>
         
         <div id="statusBar" class="status-bar disconnected">
-            状态: 未连接 | 端口: 45677
+            状态: 未连接 | 端口: --
         </div>
 
         <div class="controls">
@@ -187,7 +187,7 @@
         <div class="log-container" id="logContainer"></div>
     </div>
 
-    <script src="../sdk/TwainMiddlewareSDK.js"></script>
+    <script src="/sdk/TwainMiddlewareSDK.js"></script>
     <script>
         let twainSDK = null;
         let isConnected = false;
@@ -200,17 +200,22 @@
 
         function initSDK() {
             try {
+                // 动态获取当前端口号
+                const currentPort = window.location.port ? parseInt(window.location.port) - 1 : 45677;
+                
                 twainSDK = new TwainMiddlewareSDK({
                     host: 'localhost',
-                    port: 45677,
+                    port: currentPort,
                     debug: true
                 });
 
                 twainSDK.on('connected', onConnected);
                 twainSDK.on('disconnected', onDisconnected);
                 twainSDK.on('error', onError);
+                twainSDK.on('scanStarted', onScanStarted);
+                twainSDK.on('scanCompleted', onScanCompleted);
                 
-                log('SDK已初始化');
+                log('SDK已初始化，端口: ' + currentPort);
             } catch (error) {
                 log('SDK初始化失败: ' + error.message);
             }
@@ -248,7 +253,14 @@
         }
 
         async function scan() {
+            const scanBtn = document.getElementById('scanBtn');
+            const originalText = scanBtn.textContent;
+            
             try {
+                // 禁用扫描按钮，显示扫描进度
+                scanBtn.disabled = true;
+                scanBtn.textContent = '扫描中...';
+                
                 const options = {
                     scannerName: document.getElementById('scannerSelect').value,
                     resolution: parseInt(document.getElementById('resolution').value),
@@ -256,17 +268,32 @@
                     format: document.getElementById('format').value
                 };
 
-                log('开始扫描...');
+                log('开始扫描，请等待...');
+                log('注意：如果是首次使用扫描仪，可能需要30-60秒的热机时间');
+                
                 const result = await twainSDK.scan(options);
                 
-                if (result.success) {
-                    displayScanResult(result.data);
-                    log('扫描完成');
+                if (result && result.Success && result.Data) {
+                    displayScanResult(result.Data);
+                    log('扫描完成！');
+                } else if (result && !result.Success) {
+                    const errorMsg = result.Message || result.message || '扫描失败，未知错误';
+                    log('扫描失败: ' + errorMsg);
                 } else {
-                    log('扫描失败: ' + result.message);
+                    log('扫描失败: 响应格式异常');
                 }
             } catch (error) {
-                log('扫描失败: ' + error.message);
+                const errorMsg = error.message || error.toString() || '扫描操作发生未知错误';
+                log('扫描失败: ' + errorMsg);
+                
+                // 如果是超时错误，给出更友好的提示
+                if (errorMsg.includes('超时')) {
+                    log('提示：扫描可能仍在进行中，请稍后检查扫描仪状态');
+                }
+            } finally {
+                // 恢复扫描按钮
+                scanBtn.disabled = false;
+                scanBtn.textContent = originalText;
             }
         }
 
@@ -286,6 +313,25 @@
             log('WebSocket错误: ' + error.message);
         }
 
+        function onScanStarted(data) {
+            if (data && data.scannerName) {
+                log('扫描已启动，使用扫描仪: ' + data.scannerName);
+            } else {
+                log('扫描已启动');
+            }
+        }
+
+        function onScanCompleted(data) {
+            if (data && data.Success) {
+                log('扫描事件完成: 成功');
+            } else if (data && !data.Success) {
+                const errorMsg = data.Message || data.message || '扫描事件完成但失败';
+                log('扫描事件完成: ' + errorMsg);
+            } else {
+                log('扫描事件完成');
+            }
+        }
+
         function updateUI() {
             const statusBar = document.getElementById('statusBar');
             const connectBtn = document.getElementById('connectBtn');
@@ -293,16 +339,19 @@
             const getScannersBtn = document.getElementById('getScannersBtn');
             const scanBtn = document.getElementById('scanBtn');
 
+            // 动态获取当前端口号
+            const currentPort = window.location.port ? parseInt(window.location.port) - 1 : 45677;
+
             if (isConnected) {
                 statusBar.className = 'status-bar connected';
-                statusBar.textContent = '状态: 已连接 | 端口: 45677';
+                statusBar.textContent = '状态: 已连接 | 端口: ' + currentPort;
                 connectBtn.disabled = true;
                 disconnectBtn.disabled = false;
                 getScannersBtn.disabled = false;
                 scanBtn.disabled = false;
             } else {
                 statusBar.className = 'status-bar disconnected';
-                statusBar.textContent = '状态: 未连接 | 端口: 45677';
+                statusBar.textContent = '状态: 未连接 | 端口: ' + currentPort;
                 connectBtn.disabled = false;
                 disconnectBtn.disabled = true;
                 getScannersBtn.disabled = true;
@@ -324,10 +373,33 @@
 
         function displayScanResult(result) {
             const container = document.getElementById('imageContainer');
-            container.innerHTML = `
-                <p>格式: ${result.format}, 尺寸: ${result.width} x ${result.height}</p>
-                <img src="data:image/${result.format.toLowerCase()};base64,${result.imageData}" class="scanner-image" alt="扫描结果">
-            `;
+            
+            try {
+                if (!result) {
+                    container.innerHTML = '<p>扫描结果为空</p>';
+                    return;
+                }
+                
+                const format = result.Format || result.format || 'PNG';
+                const width = result.Width || result.width || '未知';
+                const height = result.Height || result.height || '未知';
+                const imageData = result.ImageData || result.imageData || result.Data;
+                
+                if (!imageData) {
+                    container.innerHTML = '<p>扫描结果中没有图像数据</p>';
+                    return;
+                }
+                
+                container.innerHTML = `
+                    <p>格式: ${format}, 尺寸: ${width} x ${height}</p>
+                    <img src="data:image/${format.toLowerCase()};base64,${imageData}" class="scanner-image" alt="扫描结果" onerror="this.onerror=null; this.src=''; this.alt='图像加载失败';">
+                `;
+                
+                log('图像已显示，格式: ' + format + ', 尺寸: ' + width + ' x ' + height);
+            } catch (error) {
+                container.innerHTML = '<p>显示扫描结果时发生错误: ' + error.message + '</p>';
+                log('显示扫描结果失败: ' + error.message);
+            }
         }
 
         function log(message) {

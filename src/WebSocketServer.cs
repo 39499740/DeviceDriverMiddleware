@@ -12,7 +12,7 @@ namespace TwainMiddleware
     {
         private WebSocketSharp.Server.WebSocketServer server;
         private bool isStarted = false;
-        private TwainService twainService;
+        private static TwainService twainService;
 
         /// <summary>
         /// 启动WebSocket服务器
@@ -24,9 +24,12 @@ namespace TwainMiddleware
                 if (isStarted)
                     return;
 
-                // 创建TWAIN服务
-                twainService = new TwainService();
-                twainService.Initialize();
+                // 如果TWAIN服务未初始化，则创建并初始化
+                if (twainService == null)
+                {
+                    twainService = new TwainService();
+                    twainService.Initialize();
+                }
 
                 string url = "ws://" + Config.WebSocketHost + ":" + Config.WebSocketPort;
                 server = new WebSocketSharp.Server.WebSocketServer(Config.WebSocketPort);
@@ -44,6 +47,15 @@ namespace TwainMiddleware
                 Logger.Error("启动WebSocket服务器失败: " + ex.Message, ex);
                 throw;
             }
+        }
+        
+        /// <summary>
+        /// 设置TWAIN服务
+        /// </summary>
+        /// <param name="service"></param>
+        public static void SetTwainService(TwainService service)
+        {
+            twainService = service;
         }
 
         /// <summary>

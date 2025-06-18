@@ -27,8 +27,20 @@ if not exist "%CSC_PATH%" (
 REM 创建输出目录
 if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
 
-REM 清理旧文件
+REM 清理旧文件和不需要的文件夹
 if exist "%OUTPUT_DIR%\TwainMiddleware.exe" del "%OUTPUT_DIR%\TwainMiddleware.exe"
+
+REM 清理DEBUG文件夹（不应该在最终发布中）
+if exist "%OUTPUT_DIR%\Debug\" (
+    echo 正在清理DEBUG文件夹...
+    rd /s /q "%OUTPUT_DIR%\Debug\"
+)
+
+REM 清理SDK文件夹（不应该在最终发布中）
+if exist "%OUTPUT_DIR%\sdk\" (
+    echo 正在清理SDK文件夹...
+    rd /s /q "%OUTPUT_DIR%\sdk\"
+)
 
 echo 正在编译项目...
 
@@ -71,9 +83,17 @@ if %ERRORLEVEL% equ 0 (
     REM 复制配置文件
     copy "%SRC_DIR%\App.config" "%OUTPUT_DIR%\TwainMiddleware.exe.config" >nul
     
-    echo ✅ 依赖库复制完成！
+    REM 复制web资源文件到输出目录(打包用)
+    if not exist "%OUTPUT_DIR%\web" mkdir "%OUTPUT_DIR%\web"
+    if exist "%PROJECT_DIR%\web\*" copy "%PROJECT_DIR%\web\*" "%OUTPUT_DIR%\web\" >nul 2>&1
+    
+    REM 不复制SDK文件夹，因为它们不应该打包到BIN目录
+    REM SDK文件夹仅供开发使用
+    
+    echo ✅ 依赖库和web资源文件复制完成！
     echo.
     echo 🚀 可以运行：%OUTPUT_DIR%\TwainMiddleware.exe
+    echo 📄 右键托盘图标选择"显示测试页面"即可在浏览器中测试
     
 ) else (
     echo.

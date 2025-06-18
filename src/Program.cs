@@ -12,6 +12,7 @@ namespace TwainMiddleware
         private static TrayManager trayManager;
         private static WebSocketServerWrapper webSocketServer;
         private static TwainService twainService;
+        private static HttpServer httpServer;
         private static Mutex mutex;
 
         /// <summary>
@@ -49,9 +50,13 @@ namespace TwainMiddleware
                 
                 // 初始化WebSocket服务器
                 webSocketServer = new WebSocketServerWrapper();
+                WebSocketServerWrapper.SetTwainService(twainService);
+                
+                // 初始化HTTP服务器
+                httpServer = new HttpServer(Config.WebSocketPort + 1);
                 
                 // 初始化托盘管理器
-                trayManager = new TrayManager(webSocketServer);
+                trayManager = new TrayManager(webSocketServer, httpServer);
 
                 // 设置应用程序退出事件
                 Application.ApplicationExit += Application_ApplicationExit;
@@ -93,6 +98,10 @@ namespace TwainMiddleware
                 webSocketServer.Start();
                 Logger.Info("WebSocket服务器已启动，端口: " + Config.WebSocketPort.ToString());
 
+                // 启动HTTP服务器
+                httpServer.Start();
+                Logger.Info("HTTP服务器已启动，端口: " + (Config.WebSocketPort + 1).ToString());
+
                 // 显示托盘图标
                 trayManager.Show();
                 Logger.Info("托盘图标已显示");
@@ -126,6 +135,11 @@ namespace TwainMiddleware
                     webSocketServer.Stop();
                 Logger.Info("WebSocket服务器已停止");
 
+                // 停止HTTP服务器
+                if (httpServer != null)
+                    httpServer.Stop();
+                Logger.Info("HTTP服务器已停止");
+
                 // 停止TWAIN服务
                 if (twainService != null)
                     twainService.Dispose();
@@ -155,6 +169,13 @@ namespace TwainMiddleware
                 
                 // 重新创建服务实例
                 webSocketServer = new WebSocketServerWrapper();
+                httpServer = new HttpServer(Config.WebSocketPort + 1);
+                
+                // 更新托盘管理器的HTTP服务器引用
+                if (trayManager != null)
+                {
+                    trayManager.UpdateHttpServer(httpServer);
+                }
                 
                 StartServices();
                 

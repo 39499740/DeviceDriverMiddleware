@@ -32,6 +32,19 @@ namespace TwainMiddleware
                     {
                         Logger.Info("正在初始化TWAIN服务...");
                         
+                        // 检查TWAIN DSM是否可用
+                        if (!IsTwainDsmAvailable())
+                        {
+                            var errorMsg = "TWAIN Data Source Manager (DSM) 未找到。\n\n" +
+                                         "解决方案：\n" +
+                                         "1. 运行程序目录中的 setup.bat 进行自动配置\n" +
+                                         "2. 从 https://www.twain.org/downloads/ 下载并安装 TWAIN DSM\n" +
+                                         "3. 将 twaindsm.dll 复制到程序目录\n\n" +
+                                         "详细说明请查看 docs/部署说明.md";
+                            Logger.Error(errorMsg);
+                            throw new Exception(errorMsg);
+                        }
+                        
                         // 创建TWAIN会话
                         session = new TwainSession(TWIdentity.CreateFromAssembly(DataGroups.Image, 
                             System.Reflection.Assembly.GetExecutingAssembly()));
@@ -55,9 +68,64 @@ namespace TwainMiddleware
                 catch (Exception ex)
                 {
                     isInitialized = false;
+                    
+                    // 检查是否是TWAIN DSM相关错误
+                    if (ex.Message.Contains("twaindsm") || ex.Message.Contains("0x8007007E"))
+                    {
+                        var enhancedMsg = "❌ TWAIN DSM 加载失败\n\n" +
+                                        "错误详情: " + ex.Message + "\n\n" +
+                                        "这通常是因为目标电脑缺少 TWAIN Data Source Manager。\n\n" +
+                                        "快速解决方案：\n" +
+                                        "1. 运行程序目录中的 setup.bat\n" +
+                                        "2. 或手动安装 TWAIN DSM\n\n" +
+                                        "详细说明请查看 docs/部署说明.md";
+                        Logger.Error(enhancedMsg);
+                        throw new Exception(enhancedMsg);
+                    }
+                    
                     Logger.Error("TWAIN服务初始化失败: " + ex.Message, ex);
                     throw;
                 }
+            }
+        }
+
+        /// <summary>
+        /// 检查TWAIN DSM是否可用
+        /// </summary>
+        private bool IsTwainDsmAvailable()
+        {
+            try
+            {
+                // 检查当前目录
+                if (System.IO.File.Exists("twaindsm.dll"))
+                {
+                    Logger.Debug("在当前目录找到 twaindsm.dll");
+                    return true;
+                }
+
+                // 检查系统目录
+                var systemPaths = new[]
+                {
+                    System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "twaindsm.dll"),
+                    System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.SystemX86), "twaindsm.dll")
+                };
+
+                foreach (var path in systemPaths)
+                {
+                    if (System.IO.File.Exists(path))
+                    {
+                        Logger.Debug("在系统目录找到 twaindsm.dll: " + path);
+                        return true;
+                    }
+                }
+
+                Logger.Warning("未找到 twaindsm.dll");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("检查 TWAIN DSM 时发生错误: " + ex.Message);
+                return false;
             }
         }
 

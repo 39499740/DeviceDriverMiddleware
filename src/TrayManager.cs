@@ -13,14 +13,17 @@ namespace TwainMiddleware
         private NotifyIcon notifyIcon;
         private ContextMenuStrip contextMenu;
         private readonly WebSocketServerWrapper webSocketServer;
+        private HttpServer httpServer;
 
         /// <summary>
         /// 构造函数
         /// </summary>
         /// <param name="webSocketServer">WebSocket服务器实例</param>
-        public TrayManager(WebSocketServerWrapper webSocketServer)
+        /// <param name="httpServer">HTTP服务器实例</param>
+        public TrayManager(WebSocketServerWrapper webSocketServer, HttpServer httpServer)
         {
             this.webSocketServer = webSocketServer;
+            this.httpServer = httpServer;
             InitializeNotifyIcon();
             CreateContextMenu();
         }
@@ -153,8 +156,8 @@ namespace TwainMiddleware
                 
                 contextMenu.Items.Add(new ToolStripSeparator());
                 
-                // 打开SDK示例页面
-                var testPageItem = new ToolStripMenuItem("打开SDK示例");
+                // 显示测试页面
+                var testPageItem = new ToolStripMenuItem("显示测试页面");
                 testPageItem.Click += TestPageItem_Click;
                 contextMenu.Items.Add(testPageItem);
                 
@@ -232,52 +235,35 @@ namespace TwainMiddleware
         }
 
         /// <summary>
-        /// 打开SDK示例菜单项点击事件
+        /// 显示测试页面菜单项点击事件
         /// </summary>
         private void TestPageItem_Click(object sender, EventArgs e)
         {
             try
             {
-                // 获取应用程序目录
-                string appDir = System.IO.Path.GetDirectoryName(Application.ExecutablePath);
-                
-                // 尝试多个可能的SDK路径
-                string[] possiblePaths = {
-                    System.IO.Path.Combine(appDir, "..", "sdk", "example.html"),
-                    System.IO.Path.Combine(appDir, "sdk", "example.html"),
-                    System.IO.Path.Combine(appDir, "..", "..", "sdk", "example.html"),
-                    System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "sdk", "example.html")
-                };
-                
-                string sdkPath = null;
-                foreach (string path in possiblePaths)
+                // 确保HTTP服务器正在运行
+                if (httpServer == null)
                 {
-                    string fullPath = System.IO.Path.GetFullPath(path);
-                    if (System.IO.File.Exists(fullPath))
-                    {
-                        sdkPath = fullPath;
-                        break;
-                    }
+                    MessageBox.Show("HTTP服务器未初始化", "错误", 
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
                 }
+
+                // 获取HTTP服务器URL
+                string url = httpServer.GetServerUrl();
                 
-                if (!string.IsNullOrEmpty(sdkPath))
-                {
-                    // 创建包含中间件配置信息的URL
-                    string url = "file:///" + sdkPath.Replace('\\', '/') + "?host=localhost&port=" + Config.WebSocketPort.ToString() + "&auto=true";
-                    System.Diagnostics.Process.Start(url);
-                    Logger.Info("打开SDK示例页面: " + url);
-                }
-                else
-                {
-                    MessageBox.Show("SDK示例文件未找到。请确保sdk/example.html文件存在。\n\n搜索路径：\n" + 
-                        string.Join("\n", possiblePaths.Select(p => System.IO.Path.GetFullPath(p))), 
-                        "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
+                // 在默认浏览器中打开测试页面
+                System.Diagnostics.Process.Start(url);
+                Logger.Info("显示测试页面: " + url);
+                
+                // 显示通知
+                ShowNotification("测试页面已打开", "已在浏览器中打开测试页面", ToolTipIcon.Info);
             }
             catch (Exception ex)
             {
-                Logger.Error("打开SDK示例失败: " + ex.Message, ex);
-                MessageBox.Show("打开SDK示例失败：系统找不到指定的文件。\n\n错误详情: " + ex.Message);
+                Logger.Error("显示测试页面失败: " + ex.Message, ex);
+                MessageBox.Show("显示测试页面失败。\n\n错误详情: " + ex.Message, 
+                    "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -320,11 +306,21 @@ namespace TwainMiddleware
         }
 
         /// <summary>
+        /// 更新HTTP服务器引用
+        /// </summary>
+        /// <param name="newHttpServer">新的HTTP服务器实例</param>
+        public void UpdateHttpServer(HttpServer newHttpServer)
+        {
+            this.httpServer = newHttpServer;
+            Logger.Debug("托盘管理器HTTP服务器引用已更新");
+        }
+
+        /// <summary>
         /// 双击托盘图标事件
         /// </summary>
         private void NotifyIcon_DoubleClick(object sender, EventArgs e)
         {
-            // 双击时打开SDK示例
+            // 双击时显示测试页面
             TestPageItem_Click(sender, e);
         }
 

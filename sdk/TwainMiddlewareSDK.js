@@ -28,6 +28,10 @@ class TwainMiddlewareSDK {
         this.eventListeners.set('scanStarted', []);
         this.eventListeners.set('scanCompleted', []);
         this.eventListeners.set('scannersUpdated', []);
+        this.eventListeners.set('printersUpdated', []);
+        this.eventListeners.set('printStarted', []);
+        this.eventListeners.set('printProgress', []);
+        this.eventListeners.set('printCompleted', []);
     }
 
     /**
@@ -145,15 +149,51 @@ class TwainMiddlewareSDK {
     }
 
     /**
+     * 检查TWAIN状态
+     * @returns {Promise<object>}
+     */
+    async checkTwainStatus() {
+        try {
+            const response = await this.sendCommand('checktwainstatus');
+            return response.Data || {
+                IsTwainAvailable: false,
+                TwainUnavailableReason: '未知错误'
+            };
+        } catch (error) {
+            this.log('检查TWAIN状态失败:', error);
+            throw error;
+        }
+    }
+
+    /**
      * 获取可用扫描仪列表
      * @returns {Promise<Array>}
      */
     async getScanners() {
         try {
             const response = await this.sendCommand('getscanners');
+            if (!response.Success && response.Message) {
+                // 如果获取失败，抛出友好的错误信息
+                throw new Error(response.Message);
+            }
             return response.Data || [];
         } catch (error) {
             this.log('获取扫描仪列表失败:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 获取系统中的真实打印机列表
+     * @returns {Promise<Array>}
+     */
+    async getPrinters() {
+        try {
+            const response = await this.sendCommand('getprinters');
+            this.emit('printersUpdated', response.Data);
+            return response.Data || [];
+        } catch (error) {
+            this.log('获取打印机列表失败:', error);
             throw error;
         }
     }
@@ -186,6 +226,256 @@ class TwainMiddlewareSDK {
             this.emit('scanCompleted', { success: false, message: error.message });
             throw error;
         }
+    }
+
+    /**
+     * 打印PDF文件
+     * @param {object} options - 打印参数
+     * @returns {Promise<object>}
+     */
+    async printPdf(options = {}) {
+        try {
+            // 验证必需参数
+            if (!options.printerName) {
+                throw new Error('打印机名称不能为空');
+            }
+
+            if (!options.pdfData) {
+                throw new Error('PDF数据不能为空');
+            }
+
+            // 如果pdfData是File对象或Blob对象，转换为base64
+            let pdfDataBytes;
+            if (options.pdfData instanceof File || options.pdfData instanceof Blob) {
+                pdfDataBytes = await this.fileToBase64(options.pdfData);
+            } else if (typeof options.pdfData === 'string') {
+                // 假设是base64字符串
+                pdfDataBytes = options.pdfData;
+            } else if (options.pdfData instanceof ArrayBuffer) {
+                // 转换ArrayBuffer为base64
+                pdfDataBytes = this.arrayBufferToBase64(options.pdfData);
+            } else {
+                throw new Error('不支持的PDF数据格式');
+            }
+
+            const printOptions = {
+                PrinterName: options.printerName,
+                PdfData: pdfDataBytes,
+                Copies: options.copies || 1,
+                Duplex: options.duplex || 0, // 0=默认, 1=单面, 2=双面长边, 3=双面短边
+                PaperSize: options.paperSize || '',
+                StartPage: options.startPage || 1,
+                EndPage: options.endPage || 0 // 0表示到最后一页
+            };
+
+            this.log('开始打印PDF:', { 
+                printer: printOptions.PrinterName, 
+                copies: printOptions.Copies,
+                duplex: printOptions.Duplex,
+                paperSize: printOptions.PaperSize,
+                pageRange: `${printOptions.StartPage}-${printOptions.EndPage || '最后一页'}`
+            });
+
+            this.emit('printStarted', { printerName: printOptions.PrinterName });
+            const response = await this.sendCommand('printpdf', printOptions);
+            this.emit('printCompleted', response);
+            return response;
+        } catch (error) {
+            this.log('打印PDF失败:', error);
+            this.emit('printCompleted', { success: false, message: error.message });
+            throw error;
+        }
+    }
+
+    /**
+     * 异步打印PDF文件（带进度回调）
+     * @param {object} options - 打印参数
+     * @param {function} progressCallback - 进度回调函数
+     * @returns {Promise<object>}
+     */
+    async printPdfAsync(options = {}, progressCallback = null) {
+        try {
+            // 验证必需参数
+            if (!options.printerName) {
+                throw new Error('打印机名称不能为空');
+            }
+
+            if (!options.pdfData) {
+                throw new Error('PDF数据不能为空');
+            }
+
+            // 如果pdfData是File对象或Blob对象，转换为base64
+            let pdfDataBytes;
+            if (options.pdfData instanceof File || options.pdfData instanceof Blob) {
+                pdfDataBytes = await this.fileToBase64(options.pdfData);
+            } else if (typeof options.pdfData === 'string') {
+                // 假设是base64字符串
+                pdfDataBytes = options.pdfData;
+            } else if (options.pdfData instanceof ArrayBuffer) {
+                // 转换ArrayBuffer为base64
+                pdfDataBytes = this.arrayBufferToBase64(options.pdfData);
+            } else {
+                throw new Error('不支持的PDF数据格式');
+            }
+
+            const printOptions = {
+                PrinterName: options.printerName,
+                PdfData: pdfDataBytes,
+                Copies: options.copies || 1,
+                Duplex: options.duplex || 0, // 0=默认, 1=单面, 2=双面长边, 3=双面短边
+                PaperSize: options.paperSize || '',
+                StartPage: options.startPage || 1,
+                EndPage: options.endPage || 0 // 0表示到最后一页
+            };
+
+            this.log('开始异步打印PDF:', { 
+                printer: printOptions.PrinterName, 
+                copies: printOptions.Copies,
+                duplex: printOptions.Duplex,
+                paperSize: printOptions.PaperSize,
+                pageRange: `${printOptions.StartPage}-${printOptions.EndPage || '最后一页'}`
+            });
+
+            return new Promise((resolve, reject) => {
+                const requestId = `req-${++this.requestId}`;
+                
+                // 设置消息监听器，处理打印过程中的各种响应
+                const messageListener = (response) => {
+                    if (response.Id === requestId) {
+                        // 根据消息类型处理
+                        if (response.Message === 'printProgress') {
+                            // 进度更新
+                            if (progressCallback) {
+                                progressCallback(response.Data);
+                            }
+                            this.emit('printProgress', response.Data);
+                        } else if (response.Message === 'printCompleted') {
+                            // 打印完成
+                            this.off('_internal_async_print', messageListener);
+                            this.emit('printCompleted', response.Data);
+                            resolve(response.Data);
+                        } else if (response.Message && response.Message.startsWith('printFailed:')) {
+                            // 打印失败
+                            this.off('_internal_async_print', messageListener);
+                            this.emit('printCompleted', { success: false, message: response.Message });
+                            reject(new Error(response.Message || '打印失败'));
+                        } else if (response.Message === 'printStarted') {
+                            // 初始确认消息，不需要特殊处理
+                            this.log('异步打印已启动，等待进度更新...');
+                        }
+                    }
+                };
+
+                // 添加内部监听器
+                this.on('_internal_async_print', messageListener);
+
+                // 覆盖handleMessage方法以处理打印相关消息
+                const originalHandleMessage = this.handleMessage.bind(this);
+                this.handleMessage = (data) => {
+                    try {
+                        const response = JSON.parse(data);
+                        
+                        // 检查是否是我们的异步打印响应
+                        if (response.Id === requestId && 
+                            (response.Message === 'printProgress' || 
+                             response.Message === 'printCompleted' || 
+                             response.Message === 'printStarted' ||
+                             (response.Message && response.Message.startsWith('printFailed:')))) {
+                            this.emit('_internal_async_print', response);
+                            return;
+                        }
+                    } catch (error) {
+                        // 如果解析失败，回退到原始处理
+                    }
+                    
+                    // 调用原始处理方法
+                    originalHandleMessage(data);
+                };
+
+                // 发送异步打印命令
+                const command = {
+                    Id: requestId,
+                    Action: 'printpdfasync',
+                    Data: printOptions
+                };
+
+                try {
+                    this.ws.send(JSON.stringify(command));
+                    this.log('发送异步打印命令:', command);
+                    this.emit('printStarted', { printerName: printOptions.PrinterName });
+                } catch (error) {
+                    // 清理监听器
+                    this.off('_internal_async_print', messageListener);
+                    this.handleMessage = originalHandleMessage;
+                    reject(error);
+                }
+
+                // 设置超时
+                const timeoutId = setTimeout(() => {
+                    // 清理监听器
+                    this.off('_internal_async_print', messageListener);
+                    this.handleMessage = originalHandleMessage;
+                    reject(new Error('打印请求超时'));
+                }, 300000); // 5分钟超时
+
+                // 清理函数，在成功或失败时调用
+                const cleanup = () => {
+                    clearTimeout(timeoutId);
+                    this.handleMessage = originalHandleMessage;
+                };
+
+                // 修改messageListener以包含清理逻辑
+                const originalResolve = resolve;
+                const originalReject = reject;
+                
+                resolve = (value) => {
+                    cleanup();
+                    originalResolve(value);
+                };
+                
+                reject = (error) => {
+                    cleanup();
+                    originalReject(error);
+                };
+            });
+
+        } catch (error) {
+            this.log('异步打印PDF失败:', error);
+            this.emit('printCompleted', { success: false, message: error.message });
+            throw error;
+        }
+    }
+
+    /**
+     * 将File或Blob转换为Base64字符串
+     * @param {File|Blob} file - 文件对象
+     * @returns {Promise<string>}
+     */
+    fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                // 移除data:application/pdf;base64,前缀，只保留base64数据
+                const base64 = reader.result.split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    /**
+     * 将ArrayBuffer转换为Base64字符串
+     * @param {ArrayBuffer} buffer - 数组缓冲区
+     * @returns {string}
+     */
+    arrayBufferToBase64(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
     }
 
     /**

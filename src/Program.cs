@@ -90,9 +90,25 @@ namespace TwainMiddleware
         {
             try
             {
-                // 启动TWAIN服务
-                twainService.Initialize();
-                Logger.Info("TWAIN服务已启动");
+                // 启动TWAIN服务（支持优雅降级）
+                try
+                {
+                    twainService.Initialize();
+                    if (twainService.IsTwainAvailable)
+                    {
+                        Logger.Info("TWAIN服务已启动（完整模式）");
+                    }
+                    else
+                    {
+                        Logger.Info("TWAIN服务已启动（受限模式 - 仅支持打印功能）");
+                        Logger.Info("原因: " + twainService.TwainUnavailableReason);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warning("TWAIN服务启动异常，但程序将继续运行: " + ex.Message);
+                    // 不重新抛出异常，允许程序继续运行
+                }
 
                 // 启动WebSocket服务器
                 webSocketServer.Start();
@@ -109,9 +125,15 @@ namespace TwainMiddleware
                 // 显示启动通知
                 if (Config.ShowTrayNotifications)
                 {
-                    trayManager.ShowNotification("TWAIN扫描仪中间件", 
-                        "服务已启动，端口: " + Config.WebSocketPort.ToString(),
-                        ToolTipIcon.Info);
+                    string notificationTitle = "TWAIN扫描仪中间件";
+                    string notificationMessage = "服务已启动，端口: " + Config.WebSocketPort.ToString();
+                    
+                    if (!twainService.IsTwainAvailable)
+                    {
+                        notificationMessage += "\n注意: 扫描功能不可用";
+                    }
+                    
+                    trayManager.ShowNotification(notificationTitle, notificationMessage, ToolTipIcon.Info);
                 }
             }
             catch (Exception ex)

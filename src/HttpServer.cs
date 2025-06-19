@@ -136,6 +136,10 @@ namespace TwainMiddleware
                 {
                     response.ContentType = "application/javascript; charset=utf-8";
                 }
+                else if (path.EndsWith(".d.ts"))
+                {
+                    response.ContentType = "text/plain; charset=utf-8";
+                }
                 else if (path.EndsWith(".css"))
                 {
                     response.ContentType = "text/css; charset=utf-8";
@@ -207,14 +211,37 @@ namespace TwainMiddleware
         /// <returns></returns>
         private string GetSDKFile(string fileName)
         {
-            // 内嵌SDK文件内容，避免依赖外部文件
-            if (fileName.Equals("TwainMiddlewareSDK.js", StringComparison.OrdinalIgnoreCase))
+            try
             {
-                return GetEmbeddedSDKContent();
+                // 对于分发版本，直接使用内嵌SDK，确保功能完整且不依赖外部文件
+                if (fileName.Equals("TwainMiddlewareSDK.js", StringComparison.OrdinalIgnoreCase))
+                {
+                    Logger.Debug("使用内嵌SDK文件: " + fileName);
+                    return GetEmbeddedSDKContent();
+                }
+                
+                // TypeScript定义文件返回空内容
+                if (fileName.Equals("TwainMiddlewareSDK.d.ts", StringComparison.OrdinalIgnoreCase))
+                {
+                    Logger.Debug("TypeScript定义文件请求: " + fileName);
+                    return "// TypeScript定义文件不在分发包中提供";
+                }
+                
+                Logger.Warning("未知的SDK文件: " + fileName);
+                return "// 未知的SDK文件: " + fileName;
             }
-            
-            Logger.Warning("未知的SDK文件: " + fileName);
-            return "// 未知的SDK文件: " + fileName;
+            catch (Exception ex)
+            {
+                Logger.Error("读取SDK文件失败: " + ex.Message, ex);
+                
+                // 发生异常时，如果是主SDK文件，返回内嵌版本
+                if (fileName.Equals("TwainMiddlewareSDK.js", StringComparison.OrdinalIgnoreCase))
+                {
+                    return GetEmbeddedSDKContent();
+                }
+                
+                return "// 读取SDK文件失败: " + ex.Message;
+            }
         }
 
         /// <summary>
@@ -225,7 +252,7 @@ namespace TwainMiddleware
         {
             return @"/**
  * TWAIN扫描仪中间件 JavaScript SDK
- * 版本: 1.0.0
+ * 版本: 1.2.0
  * 提供与TWAIN扫描仪中间件的WebSocket通信接口
  */
 class TwainMiddlewareSDK {
@@ -253,6 +280,10 @@ class TwainMiddlewareSDK {
         this.eventListeners.set('scanStarted', []);
         this.eventListeners.set('scanCompleted', []);
         this.eventListeners.set('scannersUpdated', []);
+        this.eventListeners.set('printersUpdated', []);
+        this.eventListeners.set('printStarted', []);
+        this.eventListeners.set('printProgress', []);
+        this.eventListeners.set('printCompleted', []);
     }
 
     /**
@@ -385,6 +416,223 @@ class TwainMiddlewareSDK {
     }
 
     /**
+     * 获取系统中的真实打印机列表
+     * @returns {Promise<Array>}
+     */
+    async getPrinters() {
+        try {
+            const response = await this.sendCommand('getprinters');
+            this.emit('printersUpdated', response.Data);
+            return response.Data || [];
+        } catch (error) {
+            this.log('获取打印机列表失败:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 打印PDF文件
+     * @param {object} options - 打印参数
+     * @returns {Promise<object>}
+     */
+    async printPdf(options = {}) {
+        try {
+            // 验证必需参数
+            if (!options.printerName) {
+                throw new Error('打印机名称不能为空');
+            }
+
+            if (!options.pdfData) {
+                throw new Error('PDF数据不能为空');
+            }
+
+            // 如果pdfData是File对象或Blob对象，转换为base64
+            let pdfDataBytes;
+            if (options.pdfData instanceof File || options.pdfData instanceof Blob) {
+                pdfDataBytes = await this.fileToBase64(options.pdfData);
+            } else if (typeof options.pdfData === 'string') {
+                // 假设是base64字符串
+                pdfDataBytes = options.pdfData;
+            } else if (options.pdfData instanceof ArrayBuffer) {
+                // 转换ArrayBuffer为base64
+                pdfDataBytes = this.arrayBufferToBase64(options.pdfData);
+            } else {
+                throw new Error('不支持的PDF数据格式');
+            }
+
+            const printOptions = {
+                PrinterName: options.printerName,
+                PdfData: pdfDataBytes,
+                Copies: options.copies || 1,
+                Duplex: options.duplex || 0,
+                PaperSize: options.paperSize || '',
+                StartPage: options.startPage || 1,
+                EndPage: options.endPage || 0
+            };
+
+            this.emit('printStarted', { printerName: printOptions.PrinterName });
+            const response = await this.sendCommand('printpdf', printOptions);
+            this.emit('printCompleted', response);
+            return response;
+        } catch (error) {
+            this.log('打印PDF失败:', error);
+            this.emit('printCompleted', { success: false, message: error.message });
+            throw error;
+        }
+    }
+
+    /**
+     * 异步打印PDF文件（带进度回调）
+     * @param {object} options - 打印参数
+     * @param {function} progressCallback - 进度回调函数
+     * @returns {Promise<object>}
+     */
+    async printPdfAsync(options = {}, progressCallback = null) {
+        try {
+            // 验证必需参数
+            if (!options.printerName) {
+                throw new Error('打印机名称不能为空');
+            }
+
+            if (!options.pdfData) {
+                throw new Error('PDF数据不能为空');
+            }
+
+            // 如果pdfData是File对象或Blob对象，转换为base64
+            let pdfDataBytes;
+            if (options.pdfData instanceof File || options.pdfData instanceof Blob) {
+                pdfDataBytes = await this.fileToBase64(options.pdfData);
+            } else if (typeof options.pdfData === 'string') {
+                pdfDataBytes = options.pdfData;
+            } else if (options.pdfData instanceof ArrayBuffer) {
+                pdfDataBytes = this.arrayBufferToBase64(options.pdfData);
+            } else {
+                throw new Error('不支持的PDF数据格式');
+            }
+
+            const printOptions = {
+                PrinterName: options.printerName,
+                PdfData: pdfDataBytes,
+                Copies: options.copies || 1,
+                Duplex: options.duplex || 0,
+                PaperSize: options.paperSize || '',
+                StartPage: options.startPage || 1,
+                EndPage: options.endPage || 0
+            };
+
+            return new Promise((resolve, reject) => {
+                let isResolved = false;
+                
+                const messageListener = (response) => {
+                    if (!response || !response.Message) return;
+                    
+                    try {
+                        const message = JSON.parse(response.Message);
+                        
+                        if (message.Type === 'printProgress' && progressCallback) {
+                            progressCallback({
+                                Status: message.Status,
+                                Percentage: message.Percentage,
+                                CurrentPage: message.CurrentPage,
+                                TotalPages: message.TotalPages,
+                                Message: message.Message
+                            });
+                        } else if (message.Type === 'printCompleted') {
+                            cleanup();
+                            if (!isResolved) {
+                                isResolved = true;
+                                resolve({
+                                    Success: message.Success || true,
+                                    Message: message.Message || '打印完成',
+                                    TotalPages: message.TotalPages,
+                                    PrintedPages: message.PrintedPages
+                                });
+                            }
+                        } else if (message.Type === 'printFailed') {
+                            cleanup();
+                            if (!isResolved) {
+                                isResolved = true;
+                                reject(new Error(message.Message || '打印失败'));
+                            }
+                        }
+                    } catch (e) {
+                        // 忽略解析错误
+                    }
+                };
+
+                const cleanup = () => {
+                    this.off('printProgress', messageListener);
+                    this.off('printCompleted', messageListener);
+                    this.off('printFailed', messageListener);
+                };
+
+                this.on('printProgress', messageListener);
+                this.on('printCompleted', messageListener);
+                this.on('printFailed', messageListener);
+
+                this.sendCommand('printpdfasync', printOptions).then((response) => {
+                    if (response.Success === false) {
+                        cleanup();
+                        if (!isResolved) {
+                            isResolved = true;
+                            reject(new Error(response.Message || '启动异步打印失败'));
+                        }
+                    }
+                }).catch((error) => {
+                    cleanup();
+                    if (!isResolved) {
+                        isResolved = true;
+                        reject(error);
+                    }
+                });
+
+                setTimeout(() => {
+                    if (!isResolved) {
+                        cleanup();
+                        isResolved = true;
+                        reject(new Error('打印操作超时'));
+                    }
+                }, 300000);
+            });
+        } catch (error) {
+            this.log('异步打印PDF失败:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 将File对象转换为Base64字符串
+     * @param {File} file - 文件对象
+     * @returns {Promise<string>}
+     */
+    fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => {
+                const base64 = reader.result.split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = error => reject(error);
+        });
+    }
+
+    /**
+     * 将ArrayBuffer转换为Base64字符串
+     * @param {ArrayBuffer} buffer - 数组缓冲区
+     * @returns {string}
+     */
+    arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+    }
+
+    /**
      * 执行扫描
      * @param {object} options - 扫描参数
      * @returns {Promise<object>}
@@ -462,6 +710,18 @@ class TwainMiddlewareSDK {
                     break;
                 case 'scanners_list':
                     this.emit('scannersUpdated', response.data);
+                    break;
+                case 'printers_list':
+                    this.emit('printersUpdated', response.data);
+                    break;
+                case 'print_started':
+                    this.emit('printStarted', response);
+                    break;
+                case 'print_progress':
+                    this.emit('printProgress', response);
+                    break;
+                case 'print_completed':
+                    this.emit('printCompleted', response);
                     break;
                 case 'error':
                     this.emit('error', new Error(response.message));

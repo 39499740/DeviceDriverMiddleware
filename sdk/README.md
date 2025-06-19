@@ -4,13 +4,31 @@
 
 TWAIN扫描仪中间件 JavaScript SDK 提供了一个简单易用的接口，让Web应用程序能够通过WebSocket与TWAIN扫描仪中间件服务进行通信，实现扫描仪设备的控制和图像获取功能。
 
+## 版本更新
+
+### v1.2.0 (最新版本)
+- ✅ **修复PDF打印功能** - 完全支持PDF文件打印，包含Base64数据编码和解码
+- ✅ **架构兼容性** - 支持32位和64位系统，自动使用正确的native库
+- ✅ **C# 5兼容性** - 完全兼容旧版编译器环境  
+- ✅ **依赖库集成** - 自动集成PdfiumViewer和native依赖库
+- ✅ **错误处理优化** - 改进的错误消息和异常处理
+
+## 📚 文档导航
+
+- **[🚀 快速开始指南](QUICKSTART.md)** - 5分钟快速上手
+- **[📋 更新日志](CHANGELOG.md)** - 版本历史和改进记录
+- **[📖 完整文档](#api-参考)** - 详细API参考文档
+
 ## 功能特性
 
 - 🔗 自动WebSocket连接管理
 - 🔄 自动重连机制
 - 📷 扫描仪设备列表获取
+- 🖨️ 真实打印机列表获取
 - 🖼️ 图像扫描功能
+- 📄 PDF文件打印功能
 - ⚙️ 丰富的扫描参数配置
+- 📊 实时打印进度监控
 - 📡 实时事件通知
 - 💓 心跳检测
 - 🛡️ 错误处理和重试机制
@@ -54,6 +72,10 @@ async function connectAndScan() {
         const scanners = await twainSDK.getScanners();
         console.log('可用扫描仪:', scanners);
 
+        // 获取打印机列表
+        const printers = await twainSDK.getPrinters();
+        console.log('可用打印机:', printers);
+
         // 执行扫描
         const result = await twainSDK.scan({
             resolution: 300,
@@ -62,6 +84,18 @@ async function connectAndScan() {
         });
         
         console.log('扫描完成:', result);
+
+        // PDF打印示例（假设有一个文件输入元素）
+        const fileInput = document.getElementById('pdfFile');
+        if (fileInput.files.length > 0 && printers.length > 0) {
+            const printResult = await twainSDK.printPdf({
+                printerName: printers[0].Name,
+                pdfData: fileInput.files[0],
+                copies: 1,
+                duplex: 0 // 使用打印机默认设置
+            });
+            console.log('打印完成:', printResult);
+        }
     } catch (error) {
         console.error('操作失败:', error);
     }
@@ -119,6 +153,28 @@ const scanners = await twainSDK.getScanners();
 
 **返回值:** `Promise<Array<string>>`
 
+#### getPrinters()
+
+获取系统中的真实打印机列表（过滤虚拟打印机）
+
+```javascript
+const printers = await twainSDK.getPrinters();
+```
+
+**返回值:** `Promise<Array<PrinterInfo>>`
+
+**PrinterInfo 对象结构:**
+
+| 属性名 | 类型 | 说明 |
+|--------|------|------|
+| Name | string | 打印机名称 |
+| IsDefault | boolean | 是否为默认打印机 |
+| Status | string | 打印机状态 |
+| CanDuplex | boolean | 是否支持双面打印 |
+| MaximumCopies | number | 最大打印份数 |
+| SupportsColor | boolean | 是否支持彩色打印 |
+| PaperSizes | Array<string> | 支持的纸张尺寸列表 |
+
 #### scan(options)
 
 执行扫描操作
@@ -163,6 +219,75 @@ const response = await twainSDK.ping();
 
 **返回值:** `Promise<object>`
 
+#### printPdf(options)
+
+打印PDF文件
+
+> **🎉 功能已修复**: 在最新版本中，PDF打印功能已完全修复，包括：
+> - ✅ Base64数据编码/解码问题已解决
+> - ✅ 支持32位和64位系统架构
+> - ✅ 自动集成所需的native依赖库
+> - ✅ 兼容C# 5编译器环境
+
+```javascript
+const printResult = await twainSDK.printPdf({
+    printerName: '打印机名称',
+    pdfData: pdfFile, // File对象、Blob对象、ArrayBuffer或base64字符串
+    copies: 1,
+    duplex: 0, // 0=默认, 1=单面, 2=双面长边, 3=双面短边
+    paperSize: 'A4',
+    startPage: 1,
+    endPage: 0 // 0表示到最后一页
+});
+```
+
+**参数说明:**
+
+| 参数名 | 类型 | 必需 | 默认值 | 说明 |
+|--------|------|------|--------|------|
+| printerName | string | ✓ | - | 打印机名称 |
+| pdfData | File\|Blob\|ArrayBuffer\|string | ✓ | - | PDF文件数据 |
+| copies | number | ✗ | 1 | 打印份数 |
+| duplex | number | ✗ | 0 | 双面打印模式 |
+| paperSize | string | ✗ | '' | 纸张尺寸 |
+| startPage | number | ✗ | 1 | 起始页 |
+| endPage | number | ✗ | 0 | 结束页(0=全部) |
+
+**返回值:** `Promise<PrintResponse>`
+
+#### printPdfAsync(options, progressCallback)
+
+异步打印PDF文件（带进度回调）
+
+```javascript
+const printResult = await twainSDK.printPdfAsync({
+    printerName: '打印机名称',
+    pdfData: pdfFile,
+    copies: 1
+}, (progress) => {
+    console.log(`打印进度: ${progress.Percentage}%`);
+    console.log(`状态: ${progress.Status}`);
+    console.log(`当前页: ${progress.CurrentPage}/${progress.TotalPages}`);
+});
+```
+
+**参数说明:**
+
+- **options**: 同 `printPdf()` 方法的参数
+- **progressCallback**: 可选的进度回调函数
+
+**进度对象结构:**
+
+| 属性名 | 类型 | 说明 |
+|--------|------|------|
+| Status | string | 状态（开始、准备中、打印中、完成、失败、已取消） |
+| Message | string | 状态消息 |
+| CurrentPage | number | 当前页 |
+| TotalPages | number | 总页数 |
+| Percentage | number | 进度百分比（0-100） |
+
+**返回值:** `Promise<PrintResult>`
+
 #### checkHealth()
 
 检查服务器健康状态
@@ -205,6 +330,10 @@ SDK支持多种事件监听，用于实时获取扫描状态和连接信息。
 - `scanStarted` - 扫描开始
 - `scanCompleted` - 扫描完成
 - `scannersUpdated` - 扫描仪列表更新
+- `printersUpdated` - 打印机列表更新
+- `printStarted` - PDF打印开始
+- `printProgress` - PDF打印进度更新
+- `printCompleted` - PDF打印完成
 
 #### 添加事件监听器
 
@@ -230,6 +359,51 @@ twainSDK.on('scanCompleted', (data) => {
         const img = document.createElement('img');
         img.src = imageUrl;
         document.body.appendChild(img);
+    }
+});
+
+twainSDK.on('printersUpdated', (printers) => {
+    console.log('打印机列表更新:', printers);
+    
+    // 更新打印机选择框
+    const printerSelect = document.getElementById('printerSelect');
+    printerSelect.innerHTML = '<option value="">选择打印机</option>';
+    
+    printers.forEach((printer, index) => {
+        const option = document.createElement('option');
+        option.value = index;
+        option.textContent = printer.Name + (printer.IsDefault ? ' (默认)' : '');
+        printerSelect.appendChild(option);
+    });
+});
+
+// PDF打印事件监听
+twainSDK.on('printStarted', (data) => {
+    console.log('PDF打印开始:', data);
+});
+
+twainSDK.on('printProgress', (progress) => {
+    console.log(`打印进度: ${progress.Percentage}%`);
+    console.log(`状态: ${progress.Status}`);
+    console.log(`当前页: ${progress.CurrentPage}/${progress.TotalPages}`);
+    
+    // 更新进度条
+    const progressBar = document.getElementById('printProgressBar');
+    if (progressBar) {
+        progressBar.style.width = progress.Percentage + '%';
+        progressBar.textContent = `${progress.Percentage}% (${progress.CurrentPage}/${progress.TotalPages})`;
+    }
+});
+
+twainSDK.on('printCompleted', (result) => {
+    console.log('PDF打印完成:', result);
+    
+    if (result.Success) {
+        console.log(`打印成功: 总页数 ${result.TotalPages}, 已打印 ${result.PrintedPages} 页`);
+        alert('PDF打印完成！');
+    } else {
+        console.error('打印失败:', result.Message);
+        alert('PDF打印失败: ' + result.Message);
     }
 });
 
@@ -616,9 +790,128 @@ A: 检查扫描参数是否正确，扫描仪是否可用，查看调试日志�
 ### Q: 如何处理大图片？
 A: 对于大尺寸图片，建议降低分辨率或使用JPEG格式以减少数据传输量。
 
+## 故障排除
+
+### PDF打印问题
+
+#### 问题：PDF打印功能不可用
+**解决方案：**
+1. 确认中间件版本为最新版本 (v1.2.0+)
+2. 检查是否正确部署了以下文件：
+   - `PdfiumViewer.dll`
+   - `pdfium.dll` (64位版本，约15.8MB)
+3. 确认打印机驱动程序正常工作
+
+#### 问题：Base64数据解码错误
+**解决方案：**
+- 最新版本已修复此问题
+- 确保PDF数据格式正确，支持以下格式：
+  ```javascript
+  // 1. File对象 (推荐)
+  pdfData: fileInput.files[0]
+  
+  // 2. Base64字符串 (自动处理)
+  pdfData: "data:application/pdf;base64,JVBERi0xLjQ..."
+  
+  // 3. 纯Base64 (自动检测)
+  pdfData: "JVBERi0xLjQ..."
+  ```
+
+#### 问题：架构不匹配错误
+**解决方案：**
+- 最新版本自动选择正确的64位native库
+- 如果仍有问题，确认系统架构并手动下载对应版本的pdfium.dll
+
+### 连接问题
+
+#### 问题：WebSocket连接失败
+**解决方案：**
+1. 检查中间件服务是否运行
+2. 确认端口配置正确 (默认: 45677)
+3. 检查防火墙设置
+4. 尝试使用不同的端口
+
+#### 问题：自动重连不工作
+**解决方案：**
+```javascript
+const twainSDK = new TwainMiddlewareSDK({
+    autoReconnect: true,
+    reconnectInterval: 3000,  // 3秒
+    maxReconnectAttempts: 5   // 最多5次
+});
+```
+
+### 扫描问题
+
+#### 问题：扫描仪无法识别
+**解决方案：**
+1. 确认扫描仪已正确连接
+2. 安装最新的TWAIN驱动程序
+3. 在设备管理器中检查设备状态
+4. 重启扫描仪设备
+
+#### 问题：扫描图像质量问题
+**解决方案：**
+```javascript
+// 调整扫描参数
+const result = await twainSDK.scan({
+    resolution: 600,        // 提高分辨率
+    colorMode: 'Color',     // 使用彩色模式
+    brightness: 100,        // 调整亮度
+    contrast: 50,          // 调整对比度
+    autoCrop: true,        // 启用自动裁剪
+    autoRotate: true       // 启用自动旋转
+});
+```
+
+### 编译问题
+
+#### 问题：C# 5语法错误
+**解决方案：**
+- 最新版本已完全兼容C# 5
+- 确保使用最新的源代码
+- 所有字符串插值和空条件运算符已替换为兼容语法
+
+#### 问题：依赖库缺失
+**解决方案：**
+1. 运行 `build-simple.bat` 自动下载依赖
+2. 手动下载缺失的NuGet包：
+   - Newtonsoft.Json
+   - websocket-sharp
+   - NTwain
+   - PdfiumViewer
+   - PdfiumViewer.Native.x86_64.v8-xfa
+
+### 调试技巧
+
+#### 启用详细日志
+```javascript
+const twainSDK = new TwainMiddlewareSDK({
+    debug: true  // 启用调试模式
+});
+
+// 监听所有事件
+twainSDK.on('error', console.error);
+twainSDK.on('connected', () => console.log('已连接'));
+twainSDK.on('disconnected', () => console.log('已断开'));
+```
+
+#### 检查中间件状态
+```javascript
+// 检查健康状态
+const isHealthy = await twainSDK.checkHealth();
+console.log('服务健康状态:', isHealthy);
+
+// 检查连接状态
+const isConnected = twainSDK.getConnectionState();
+console.log('连接状态:', isConnected);
+```
+
 ## 技术支持
 
 如果您在使用过程中遇到问题，请：
 1. 启用调试模式查看详细日志
 2. 检查中间件服务的运行状态
-3. 参考项目文档中的故障排除指南 
+3. 参考上述故障排除指南
+4. 查看项目的Issues页面
+5. 确认使用的是最新版本 (v1.2.0+) 

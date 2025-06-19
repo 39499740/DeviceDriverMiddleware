@@ -24,11 +24,19 @@ namespace TwainMiddleware
                 if (isStarted)
                     return;
 
-                // 如果TWAIN服务未初始化，则创建并初始化
+                // 如果TWAIN服务未初始化，则创建并初始化（支持优雅降级）
                 if (twainService == null)
                 {
                     twainService = new TwainService();
-                    twainService.Initialize();
+                    try
+                    {
+                        twainService.Initialize();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warning("WebSocket服务器启动时TWAIN初始化失败，将在受限模式下运行: " + ex.Message);
+                        // 不重新抛出异常，允许WebSocket服务器继续启动
+                    }
                 }
 
                 string url = "ws://" + Config.WebSocketHost + ":" + Config.WebSocketPort;
@@ -161,8 +169,22 @@ namespace TwainMiddleware
                         break;
 
                     case "getscanners":
+                        if (!twainService.IsTwainAvailable)
+                        {
+                            response.Success = false;
+                            response.Message = "TWAIN功能不可用: " + twainService.TwainUnavailableReason;
+                            response.Data = new string[0]; // 返回空数组
+                        }
+                        else
+                        {
+                            response.Success = true;
+                            response.Data = twainService.GetScanners();
+                        }
+                        break;
+
+                    case "getprinters":
                         response.Success = true;
-                        response.Data = twainService.GetScanners();
+                        response.Data = twainService.GetPrinters();
                         break;
 
                     case "scan":
@@ -171,6 +193,78 @@ namespace TwainMiddleware
                         response.Success = result.Success;
                         response.Data = result;
                         response.Message = result.Message;
+                        break;
+
+                    case "checktwainstatus":
+                        response.Success = true;
+                        response.Data = new 
+                        {
+                            IsTwainAvailable = twainService.IsTwainAvailable,
+                            TwainUnavailableReason = twainService.TwainUnavailableReason,
+                            CompatibilityResult = twainService.CheckTwainCompatibility()
+                        };
+                        break;
+
+                    case "printpdf":
+                        var printOptions = JsonConvert.DeserializeObject<PrintOptions>(command.Data != null ? command.Data.ToString() : "{}");
+                        var printResult = twainService.PrintPdf(printOptions);
+                        response.Success = printResult.Success;
+                        response.Data = printResult;
+                        response.Message = printResult.Message;
+                        break;
+
+                    case "printpdfasync":
+                        var asyncPrintOptions = JsonConvert.DeserializeObject<PrintOptions>(command.Data != null ? command.Data.ToString() : "{}");
+                        
+                        // 使用异步方法并通过WebSocket发送进度更新
+                        System.Threading.Tasks.Task.Run(async () =>
+                        {
+                            try
+                            {
+                                var asyncResult = await twainService.PrintPdfAsync(asyncPrintOptions, (progress) =>
+                                {
+                                    // 发送进度更新
+                                    var progressResponse = new WebSocketResponse
+                                    {
+                                        Id = command.Id,
+                                        Success = true,
+                                        Data = progress,
+                                        Message = "printProgress"
+                                    };
+                                    var progressJson = JsonConvert.SerializeObject(progressResponse, Formatting.Indented);
+                                    Send(progressJson);
+                                });
+
+                                // 发送最终结果
+                                var finalResponse = new WebSocketResponse
+                                {
+                                    Id = command.Id,
+                                    Success = asyncResult.Success,
+                                    Data = asyncResult,
+                                    Message = asyncResult.Success ? "printCompleted" : ("printFailed: " + asyncResult.Message)
+                                };
+                                var finalJson = JsonConvert.SerializeObject(finalResponse, Formatting.Indented);
+                                Send(finalJson);
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Error("异步打印PDF失败: " + ex.Message, ex);
+                                var errorResponse = new WebSocketResponse
+                                {
+                                    Id = command.Id,
+                                    Success = false,
+                                    Data = new PrintResult { Success = false, Message = ex.Message },
+                                    Message = "printFailed: " + ex.Message
+                                };
+                                var errorJson = JsonConvert.SerializeObject(errorResponse, Formatting.Indented);
+                                Send(errorJson);
+                            }
+                        });
+
+                        // 立即返回确认消息
+                        response.Success = true;
+                        response.Message = "printStarted";
+                        response.Data = new { Message = "异步打印任务已启动，请等待进度更新", PrinterName = asyncPrintOptions.PrinterName };
                         break;
 
                     default:

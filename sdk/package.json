@@ -1,7 +1,7 @@
 {
   "name": "twain-middleware-sdk",
-  "version": "1.0.0",
-  "description": "TWAIN扫描仪中间件的JavaScript SDK，提供WebSocket通信接口用于控制扫描仪设备",
+  "version": "1.2.0",
+  "description": "TWAIN扫描仪中间件的JavaScript SDK，提供完整的扫描仪控制和PDF打印功能，支持WebSocket通信、Base64数据编码、32/64位架构兼容",
   "main": "TwainMiddlewareSDK.js",
   "types": "TwainMiddlewareSDK.d.ts",
   "files": [
@@ -23,7 +23,17 @@
     "typescript",
     "scanning",
     "image",
-    "document"
+    "document",
+    "pdf",
+    "printing",
+    "base64",
+    "pdfium",
+    "real-time",
+    "async",
+    "progress",
+    "x64",
+    "x86",
+    "compatibility"
   ],
   "author": "TWAIN Middleware Team",
   "license": "MIT",

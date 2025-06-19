@@ -65,6 +65,7 @@ REM 编译项目 (包含NTwain库，使用真实TWAIN功能)
     /reference:"%PACKAGES_DIR%\Newtonsoft.Json.13.0.3\lib\net45\Newtonsoft.Json.dll" ^
     /reference:"%PACKAGES_DIR%\WebSocketSharp-NonPreRelease.1.0.0\lib\net35\websocket-sharp.dll" ^
     /reference:"%PACKAGES_DIR%\NTwain.3.7.5\lib\net40\NTwain.dll" ^
+    /reference:"%PACKAGES_DIR%\PdfiumViewer.2.13.0.0\lib\net20\PdfiumViewer.dll" ^
     "%SRC_DIR%\*.cs" ^
     "%SRC_DIR%\Properties\*.cs"
 
@@ -79,6 +80,8 @@ if %ERRORLEVEL% equ 0 (
     copy "%PACKAGES_DIR%\Newtonsoft.Json.13.0.3\lib\net45\Newtonsoft.Json.dll" "%OUTPUT_DIR%\" >nul
     copy "%PACKAGES_DIR%\WebSocketSharp-NonPreRelease.1.0.0\lib\net35\websocket-sharp.dll" "%OUTPUT_DIR%\" >nul
     copy "%PACKAGES_DIR%\NTwain.3.7.5\lib\net40\NTwain.dll" "%OUTPUT_DIR%\" >nul
+    copy "%PACKAGES_DIR%\PdfiumViewer.2.13.0.0\lib\net20\PdfiumViewer.dll" "%OUTPUT_DIR%\" >nul
+    copy "%PACKAGES_DIR%\PdfiumViewer.Native.x86_64.v8-xfa.2018.4.8.256\Build\x64\pdfium.dll" "%OUTPUT_DIR%\" >nul
     
     REM 复制配置文件
     copy "%SRC_DIR%\App.config" "%OUTPUT_DIR%\TwainMiddleware.exe.config" >nul
@@ -87,10 +90,20 @@ if %ERRORLEVEL% equ 0 (
     if not exist "%OUTPUT_DIR%\web" mkdir "%OUTPUT_DIR%\web"
     if exist "%PROJECT_DIR%\web\*" copy "%PROJECT_DIR%\web\*" "%OUTPUT_DIR%\web\" >nul 2>&1
     
-    REM 不复制SDK文件夹，因为它们不应该打包到BIN目录
-    REM SDK文件夹仅供开发使用
+    REM 复制独立测试页面到输出目录（备用）
+    if exist "%PROJECT_DIR%\standalone-test.html" (
+        copy "%PROJECT_DIR%\standalone-test.html" "%OUTPUT_DIR%\" >nul
+        echo ✅ 独立测试页面已复制
+    )
     
-    echo ✅ 依赖库和web资源文件复制完成！
+    REM 复制使用说明文件
+    if exist "%OUTPUT_DIR%\使用说明.txt" (
+        echo ✅ 使用说明文件已存在
+    )
+    
+    REM HTTP服务器使用内嵌SDK，无需复制SDK文件夹到分发包
+    
+    echo ✅ 依赖库、web资源文件和测试页面复制完成！
     echo.
     echo 🚀 可以运行：%OUTPUT_DIR%\TwainMiddleware.exe
     echo 📄 右键托盘图标选择"显示测试页面"即可在浏览器中测试

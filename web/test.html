@@ -145,6 +145,7 @@
             <button id="connectBtn" class="btn">连接服务</button>
             <button id="disconnectBtn" class="btn" disabled>断开连接</button>
             <button id="getScannersBtn" class="btn" disabled>获取扫描仪</button>
+            <button id="getPrintersBtn" class="btn" disabled>获取打印机</button>
             <button id="scanBtn" class="btn" disabled>开始扫描</button>
         </div>
 
@@ -156,6 +157,62 @@
                     <option value="">默认扫描仪</option>
                 </select>
             </div>
+            <div class="form-group">
+                <label>打印机:</label>
+                <select id="printerSelect">
+                    <option value="">请选择打印机</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="printer-details" style="margin-top: 20px;">
+            <h3>打印机详情</h3>
+            <div id="printerInfo"></div>
+        </div>
+
+        <div class="scan-options">
+            <h3>PDF打印测试</h3>
+            <div class="form-group">
+                <label>选择PDF文件:</label>
+                <input type="file" id="pdfFileInput" accept=".pdf" style="margin-bottom: 10px;">
+            </div>
+            <div class="form-group">
+                <label>打印份数:</label>
+                <input type="number" id="copies" value="1" min="1" max="99" style="width: 80px;">
+            </div>
+            <div class="form-group">
+                <label>双面打印:</label>
+                <select id="duplexMode" style="width: 150px;">
+                    <option value="0">默认</option>
+                    <option value="1">单面</option>
+                    <option value="2">双面(长边翻转)</option>
+                    <option value="3">双面(短边翻转)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>页面范围:</label>
+                <input type="number" id="startPage" value="1" min="1" placeholder="起始页" style="width: 80px;">
+                <span>到</span>
+                <input type="number" id="endPage" value="0" min="0" placeholder="结束页(0=全部)" style="width: 80px;">
+            </div>
+            <div class="form-group">
+                <button id="printPdfBtn" class="btn" disabled>打印PDF</button>
+                <button id="printPdfAsyncBtn" class="btn" disabled>异步打印PDF(带进度)</button>
+            </div>
+            <div id="printProgress" style="margin-top: 10px; display: none;">
+                <div style="background: #f0f0f0; border-radius: 5px; padding: 10px;">
+                    <div>状态: <span id="printStatus">准备中</span></div>
+                    <div>进度: <span id="printPercentage">0</span>% (<span id="printCurrentPage">0</span>/<span id="printTotalPages">0</span>)</div>
+                    <div style="background: #ddd; height: 20px; border-radius: 10px; margin-top: 5px;">
+                        <div id="printProgressBar" style="background: #007bff; height: 100%; border-radius: 10px; width: 0%; transition: width 0.3s;"></div>
+                    </div>
+                    <div style="margin-top: 5px; font-size: 12px;" id="printMessage">等待开始...</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="scan-options">
+            <h3>扫描参数</h3>
             <div class="form-group">
                 <label>分辨率 (DPI):</label>
                 <input type="number" id="resolution" value="300" min="50" max="2400">
@@ -214,6 +271,10 @@
                 twainSDK.on('error', onError);
                 twainSDK.on('scanStarted', onScanStarted);
                 twainSDK.on('scanCompleted', onScanCompleted);
+                twainSDK.on('printersUpdated', onPrintersUpdated);
+                twainSDK.on('printStarted', onPrintStarted);
+                twainSDK.on('printProgress', onPrintProgress);
+                twainSDK.on('printCompleted', onPrintCompleted);
                 
                 log('SDK已初始化，端口: ' + currentPort);
             } catch (error) {
@@ -225,7 +286,19 @@
             document.getElementById('connectBtn').onclick = connect;
             document.getElementById('disconnectBtn').onclick = disconnect;
             document.getElementById('getScannersBtn').onclick = getScanners;
+            document.getElementById('getPrintersBtn').onclick = getPrinters;
             document.getElementById('scanBtn').onclick = scan;
+            document.getElementById('printPdfBtn').onclick = printPdf;
+            document.getElementById('printPdfAsyncBtn').onclick = printPdfAsync;
+            
+            // PDF文件选择事件
+            document.getElementById('pdfFileInput').onchange = function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    log('选择PDF文件: ' + file.name + ' (大小: ' + (file.size / 1024).toFixed(2) + ' KB)');
+                    updatePrintButtonsState();
+                }
+            };
         }
 
         async function connect() {
@@ -250,6 +323,135 @@
             } catch (error) {
                 log('获取扫描仪列表失败: ' + error.message);
             }
+        }
+
+        async function getPrinters() {
+            try {
+                const printers = await twainSDK.getPrinters();
+                updatePrinterList(printers);
+                log('获取打印机列表成功: ' + printers.length + ' 个真实打印机');
+            } catch (error) {
+                log('获取打印机列表失败: ' + error.message);
+            }
+        }
+
+        async function printPdf() {
+            try {
+                const selectedPrinterIndex = document.getElementById('printerSelect').value;
+                if (!selectedPrinterIndex) {
+                    log('请先选择一个打印机');
+                    return;
+                }
+
+                const pdfFile = document.getElementById('pdfFileInput').files[0];
+                if (!pdfFile) {
+                    log('请先选择一个PDF文件');
+                    return;
+                }
+
+                const printers = await twainSDK.getPrinters();
+                const selectedPrinter = printers[parseInt(selectedPrinterIndex)];
+                
+                const printOptions = {
+                    printerName: selectedPrinter.Name,
+                    pdfData: pdfFile,
+                    copies: parseInt(document.getElementById('copies').value) || 1,
+                    duplex: parseInt(document.getElementById('duplexMode').value) || 0,
+                    startPage: parseInt(document.getElementById('startPage').value) || 1,
+                    endPage: parseInt(document.getElementById('endPage').value) || 0
+                };
+
+                log('开始打印PDF: ' + pdfFile.name + ' 到打印机: ' + selectedPrinter.Name);
+                log('打印参数: ' + JSON.stringify({
+                    copies: printOptions.copies,
+                    duplex: printOptions.duplex,
+                    pageRange: printOptions.startPage + '-' + (printOptions.endPage || '最后一页')
+                }));
+
+                const result = await twainSDK.printPdf(printOptions);
+                
+                if (result.Data && result.Data.Success) {
+                    log('✅ PDF打印成功: ' + result.Data.Message);
+                    log('总页数: ' + result.Data.TotalPages + ', 已打印: ' + result.Data.PrintedPages + ' 页');
+                } else {
+                    log('❌ PDF打印失败: ' + (result.Data ? result.Data.Message : result.Message));
+                }
+            } catch (error) {
+                log('❌ PDF打印出错: ' + error.message);
+            }
+        }
+
+        async function printPdfAsync() {
+            try {
+                const selectedPrinterIndex = document.getElementById('printerSelect').value;
+                if (!selectedPrinterIndex) {
+                    log('请先选择一个打印机');
+                    return;
+                }
+
+                const pdfFile = document.getElementById('pdfFileInput').files[0];
+                if (!pdfFile) {
+                    log('请先选择一个PDF文件');
+                    return;
+                }
+
+                const printers = await twainSDK.getPrinters();
+                const selectedPrinter = printers[parseInt(selectedPrinterIndex)];
+                
+                const printOptions = {
+                    printerName: selectedPrinter.Name,
+                    pdfData: pdfFile,
+                    copies: parseInt(document.getElementById('copies').value) || 1,
+                    duplex: parseInt(document.getElementById('duplexMode').value) || 0,
+                    startPage: parseInt(document.getElementById('startPage').value) || 1,
+                    endPage: parseInt(document.getElementById('endPage').value) || 0
+                };
+
+                log('开始异步打印PDF: ' + pdfFile.name + ' 到打印机: ' + selectedPrinter.Name);
+
+                // 显示进度条
+                document.getElementById('printProgress').style.display = 'block';
+                
+                const result = await twainSDK.printPdfAsync(printOptions, (progress) => {
+                    updatePrintProgress(progress);
+                });
+                
+                if (result.Success) {
+                    log('✅ PDF异步打印成功: ' + result.Message);
+                    log('总页数: ' + result.TotalPages + ', 已打印: ' + result.PrintedPages + ' 页');
+                    setTimeout(() => {
+                        document.getElementById('printProgress').style.display = 'none';
+                    }, 3000);
+                } else {
+                    log('❌ PDF异步打印失败: ' + result.Message);
+                    document.getElementById('printProgress').style.display = 'none';
+                }
+            } catch (error) {
+                log('❌ PDF异步打印出错: ' + error.message);
+                document.getElementById('printProgress').style.display = 'none';
+            }
+        }
+
+        function updatePrintProgress(progress) {
+            document.getElementById('printStatus').textContent = progress.Status || '未知';
+            document.getElementById('printPercentage').textContent = progress.Percentage || 0;
+            document.getElementById('printCurrentPage').textContent = progress.CurrentPage || 0;
+            document.getElementById('printTotalPages').textContent = progress.TotalPages || 0;
+            document.getElementById('printProgressBar').style.width = (progress.Percentage || 0) + '%';
+            document.getElementById('printMessage').textContent = progress.Message || '';
+            
+            log('📊 打印进度: ' + (progress.Percentage || 0) + '% - ' + (progress.Message || ''));
+        }
+
+        function updatePrintButtonsState() {
+            const isConnected = twainSDK && twainSDK.getConnectionState();
+            const hasPdfFile = document.getElementById('pdfFileInput').files.length > 0;
+            const hasPrinter = document.getElementById('printerSelect').value !== '';
+            
+            const canPrint = isConnected && hasPdfFile && hasPrinter;
+            
+            document.getElementById('printPdfBtn').disabled = !canPrint;
+            document.getElementById('printPdfAsyncBtn').disabled = !canPrint;
         }
 
         async function scan() {
@@ -301,6 +503,14 @@
             isConnected = true;
             updateUI();
             log('WebSocket连接已建立');
+            // 自动获取打印机列表
+            setTimeout(() => {
+                getPrinters();
+            }, 500);
+        }
+
+        function onPrintersUpdated(printers) {
+            log('打印机列表已更新，找到 ' + printers.length + ' 个打印机');
         }
 
         function onDisconnected() {
@@ -332,11 +542,38 @@
             }
         }
 
+        function onPrintStarted(data) {
+            if (data && data.printerName) {
+                log('🖨️ 打印已启动，使用打印机: ' + data.printerName);
+            } else {
+                log('🖨️ 打印已启动');
+            }
+        }
+
+        function onPrintProgress(data) {
+            updatePrintProgress(data);
+        }
+
+        function onPrintCompleted(data) {
+            if (data && data.Success) {
+                log('✅ 打印事件完成: 成功');
+                if (data.TotalPages && data.PrintedPages) {
+                    log('📄 总页数: ' + data.TotalPages + ', 已打印: ' + data.PrintedPages + ' 页');
+                }
+            } else if (data && !data.Success) {
+                const errorMsg = data.Message || data.message || '打印事件完成但失败';
+                log('❌ 打印事件完成: ' + errorMsg);
+            } else {
+                log('🖨️ 打印事件完成');
+            }
+        }
+
         function updateUI() {
             const statusBar = document.getElementById('statusBar');
             const connectBtn = document.getElementById('connectBtn');
             const disconnectBtn = document.getElementById('disconnectBtn');
             const getScannersBtn = document.getElementById('getScannersBtn');
+            const getPrintersBtn = document.getElementById('getPrintersBtn');
             const scanBtn = document.getElementById('scanBtn');
 
             // 动态获取当前端口号
@@ -348,14 +585,19 @@
                 connectBtn.disabled = true;
                 disconnectBtn.disabled = false;
                 getScannersBtn.disabled = false;
+                getPrintersBtn.disabled = false;
                 scanBtn.disabled = false;
+                updatePrintButtonsState();
             } else {
                 statusBar.className = 'status-bar disconnected';
                 statusBar.textContent = '状态: 未连接 | 端口: ' + currentPort;
                 connectBtn.disabled = false;
                 disconnectBtn.disabled = true;
                 getScannersBtn.disabled = true;
+                getPrintersBtn.disabled = true;
                 scanBtn.disabled = true;
+                document.getElementById('printPdfBtn').disabled = true;
+                document.getElementById('printPdfAsyncBtn').disabled = true;
             }
         }
 
@@ -369,6 +611,71 @@
                 option.textContent = scanner;
                 select.appendChild(option);
             });
+        }
+
+        function updatePrinterList(printers) {
+            const select = document.getElementById('printerSelect');
+            const printerInfo = document.getElementById('printerInfo');
+            
+            select.innerHTML = '<option value="">请选择打印机</option>';
+            printerInfo.innerHTML = '';
+            
+            if (!printers || printers.length === 0) {
+                select.innerHTML += '<option value="" disabled>未找到打印机</option>';
+                printerInfo.innerHTML = '<p>未找到可用的真实打印机</p>';
+                return;
+            }
+            
+            printers.forEach((printer, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = printer.Name + (printer.IsDefault ? ' (默认)' : '');
+                select.appendChild(option);
+            });
+            
+            // 打印机选择变更事件
+            select.onchange = function() {
+                const selectedIndex = parseInt(this.value);
+                if (!isNaN(selectedIndex) && printers[selectedIndex]) {
+                    displayPrinterInfo(printers[selectedIndex]);
+                } else {
+                    printerInfo.innerHTML = '';
+                }
+                updatePrintButtonsState();
+            };
+            
+            // 如果只有一个打印机，自动选择
+            if (printers.length === 1) {
+                select.value = '0';
+                displayPrinterInfo(printers[0]);
+            }
+        }
+
+        function displayPrinterInfo(printer) {
+            const printerInfo = document.getElementById('printerInfo');
+            const paperSizes = printer.PaperSizes && printer.PaperSizes.length > 0 
+                ? printer.PaperSizes.slice(0, 3).join(', ') + (printer.PaperSizes.length > 3 ? '...' : '')
+                : '无信息';
+                
+            // 获取打印机类型信息
+            const printerType = printer.PrinterType || '未知';
+            const printerTypeDesc = printer.PrinterTypeDescription || '未知技术类型';
+            const markingTech = printer.MarkingTechnology || 0;
+                
+            printerInfo.innerHTML = `
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; border: 1px solid #dee2e6;">
+                    <h4>${printer.Name}</h4>
+                    <p><strong>类型:</strong> <span style="color: #007bff; font-weight: bold;">${printerType}</span></p>
+                    <p><strong>技术描述:</strong> ${printerTypeDesc}</p>
+                    <p><strong>状态:</strong> ${printer.Status}</p>
+                    <p><strong>默认打印机:</strong> ${printer.IsDefault ? '是' : '否'}</p>
+                    <p><strong>彩色打印:</strong> ${printer.SupportsColor ? '支持' : '不支持'}</p>
+                    <p><strong>双面打印:</strong> ${printer.CanDuplex ? '支持' : '不支持'}</p>
+                    <p><strong>最大份数:</strong> ${printer.MaximumCopies}</p>
+                    <p><strong>纸张尺寸:</strong> ${paperSizes}</p>
+                    ${markingTech > 0 ? `<p><strong>技术代码:</strong> ${markingTech}</p>` : ''}
+                </div>
+            `;
         }
 
         function displayScanResult(result) {

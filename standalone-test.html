@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TWAIN中间件 - 独立测试页面</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        
+        .status-bar.connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status-bar.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+        
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover:not(:disabled) {
+            background-color: #1e7e34;
+        }
+        
+        .log-container {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+        
+        .log-info {
+            background-color: #e3f2fd;
+            color: #1976d2;
+        }
+        
+        .log-success {
+            background-color: #e8f5e8;
+            color: #2e7d32;
+        }
+        
+        .log-error {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+        
+        .log-warning {
+            background-color: #fff3e0;
+            color: #f57c00;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .form-group select,
+        .form-group input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🖨️ TWAIN中间件 - 独立测试页面</h1>
+        
+        <div class="status-bar disconnected" id="statusBar">
+            <span id="statusText">❌ 未连接</span>
+            <span id="statusTime"></span>
+        </div>
+        
+        <div class="button-group">
+            <button class="btn btn-primary" id="connectBtn">🔗 连接中间件</button>
+            <button class="btn btn-primary" id="disconnectBtn" disabled>🔌 断开连接</button>
+            <button class="btn btn-success" id="getPrintersBtn" disabled>📋 获取打印机列表</button>
+            <button class="btn btn-success" id="clearLogBtn">🗑️ 清空日志</button>
+        </div>
+        
+        <div class="form-group">
+            <label for="printerSelect">选择打印机:</label>
+            <select id="printerSelect" disabled>
+                <option value="">请先连接中间件</option>
+            </select>
+        </div>
+        
+        <div id="printerDetails"></div>
+        
+        <div class="log-container" id="logContainer"></div>
+    </div>
+
+    <script>
+        /**
+         * TWAIN扫描仪中间件 JavaScript SDK (内嵌版本)
+         * 版本: 1.2.0
+         */
+        class TwainMiddlewareSDK {
+            constructor(options = {}) {
+                this.options = {
+                    host: options.host || 'localhost',
+                    port: options.port || 45677,
+                    autoReconnect: options.autoReconnect || true,
+                    reconnectInterval: options.reconnectInterval || 3000,
+                    maxReconnectAttempts: options.maxReconnectAttempts || 3,
+                    debug: options.debug || false
+                };
+
+                this.ws = null;
+                this.isConnected = false;
+                this.reconnectAttempts = 0;
+                this.requestCallbacks = new Map();
+                this.eventListeners = new Map();
+                this.requestId = 0;
+
+                // 初始化事件监听器映射
+                this.eventListeners.set('connected', []);
+                this.eventListeners.set('disconnected', []);
+                this.eventListeners.set('error', []);
+                this.eventListeners.set('printersUpdated', []);
+            }
+
+            /**
+             * 连接到中间件服务
+             */
+            connect() {
+                return new Promise((resolve, reject) => {
+                    const wsUrl = `ws://${this.options.host}:${this.options.port}/twain`;
+                    this.log('正在连接到:', wsUrl);
+
+                    try {
+                        this.ws = new WebSocket(wsUrl);
+
+                        this.ws.onopen = () => {
+                            this.isConnected = true;
+                            this.reconnectAttempts = 0;
+                            this.log('WebSocket连接已建立');
+                            this.emit('connected');
+                            resolve();
+                        };
+
+                        this.ws.onmessage = (event) => {
+                            this.handleMessage(event.data);
+                        };
+
+                        this.ws.onclose = (event) => {
+                            this.isConnected = false;
+                            this.log('WebSocket连接已关闭:', event.code, event.reason);
+                            this.emit('disconnected', { code: event.code, reason: event.reason });
+                        };
+
+                        this.ws.onerror = (error) => {
+                            this.log('WebSocket错误:', error);
+                            this.emit('error', error);
+                            if (!this.isConnected) {
+                                reject(error);
+                            }
+                        };
+
+                    } catch (error) {
+                        this.log('连接失败:', error);
+                        reject(error);
+                    }
+                });
+            }
+
+            /**
+             * 断开连接
+             */
+            disconnect() {
+                if (this.ws && this.isConnected) {
+                    this.ws.close();
+                }
+            }
+
+            /**
+             * 发送命令到中间件
+             */
+            sendCommand(action, data = null) {
+                return new Promise((resolve, reject) => {
+                    if (!this.isConnected) {
+                        reject(new Error('WebSocket未连接'));
+                        return;
+                    }
+
+                    const requestId = `req-${++this.requestId}`;
+                    const command = {
+                        Id: requestId,
+                        Action: action,
+                        Data: data
+                    };
+
+                    // 存储回调函数
+                    this.requestCallbacks.set(requestId, { resolve, reject });
+
+                    // 设置超时
+                    setTimeout(() => {
+                        if (this.requestCallbacks.has(requestId)) {
+                            this.requestCallbacks.delete(requestId);
+                            reject(new Error('请求超时'));
+                        }
+                    }, 10000);
+
+                    // 发送命令
+                    try {
+                        this.ws.send(JSON.stringify(command));
+                        this.log('发送命令:', command);
+                    } catch (error) {
+                        this.requestCallbacks.delete(requestId);
+                        reject(error);
+                    }
+                });
+            }
+
+            /**
+             * 获取系统中的真实打印机列表
+             */
+            async getPrinters() {
+                try {
+                    const response = await this.sendCommand('getprinters');
+                    this.emit('printersUpdated', response.Data);
+                    return response.Data || [];
+                } catch (error) {
+                    this.log('获取打印机列表失败:', error);
+                    throw error;
+                }
+            }
+
+            /**
+             * 处理服务器消息
+             */
+            handleMessage(data) {
+                try {
+                    const message = JSON.parse(data);
+                    this.log('收到消息:', message);
+
+                    // 处理请求响应
+                    if (message.Id && this.requestCallbacks.has(message.Id)) {
+                        const callback = this.requestCallbacks.get(message.Id);
+                        this.requestCallbacks.delete(message.Id);
+
+                        if (message.Success) {
+                            callback.resolve(message);
+                        } else {
+                            callback.reject(new Error(message.Message || '未知错误'));
+                        }
+                    }
+                } catch (error) {
+                    this.log('处理消息失败:', error);
+                }
+            }
+
+            /**
+             * 添加事件监听器
+             */
+            on(event, callback) {
+                if (!this.eventListeners.has(event)) {
+                    this.eventListeners.set(event, []);
+                }
+                this.eventListeners.get(event).push(callback);
+            }
+
+            /**
+             * 触发事件
+             */
+            emit(event, data) {
+                if (this.eventListeners.has(event)) {
+                    this.eventListeners.get(event).forEach(callback => {
+                        try {
+                            callback(data);
+                        } catch (error) {
+                            this.log('事件回调错误:', error);
+                        }
+                    });
+                }
+            }
+
+            /**
+             * 获取连接状态
+             */
+            getConnectionState() {
+                return this.isConnected;
+            }
+
+            /**
+             * 日志输出
+             */
+            log(...args) {
+                if (this.options.debug) {
+                    console.log('[TwainSDK]', ...args);
+                }
+            }
+        }
+
+        // 主程序
+        let twainSDK = null;
+        let isConnected = false;
+
+        // DOM元素
+        const elements = {
+            statusBar: document.getElementById('statusBar'),
+            statusText: document.getElementById('statusText'),
+            statusTime: document.getElementById('statusTime'),
+            connectBtn: document.getElementById('connectBtn'),
+            disconnectBtn: document.getElementById('disconnectBtn'),
+            getPrintersBtn: document.getElementById('getPrintersBtn'),
+            clearLogBtn: document.getElementById('clearLogBtn'),
+            printerSelect: document.getElementById('printerSelect'),
+            printerDetails: document.getElementById('printerDetails'),
+            logContainer: document.getElementById('logContainer')
+        };
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initSDK();
+            bindEvents();
+            updateUI(false);
+            addLog('🚀 页面已加载，可以开始测试', 'info');
+        });
+
+        function initSDK() {
+            try {
+                twainSDK = new TwainMiddlewareSDK({
+                    host: 'localhost',
+                    port: 45677,
+                    debug: true
+                });
+
+                twainSDK.on('connected', () => {
+                    addLog('✅ WebSocket连接已建立', 'success');
+                    updateUI(true);
+                    
+                    // 自动获取打印机列表
+                    setTimeout(() => {
+                        getPrinters();
+                    }, 500);
+                });
+
+                twainSDK.on('disconnected', (data) => {
+                    addLog(`⚠️ WebSocket连接已断开 (代码: ${data.code})`, 'warning');
+                    updateUI(false);
+                });
+
+                twainSDK.on('error', (error) => {
+                    addLog(`❌ WebSocket错误: ${error.message || error}`, 'error');
+                });
+
+                twainSDK.on('printersUpdated', (printers) => {
+                    addLog(`🖨️ 打印机列表已更新，找到 ${printers.length} 个打印机`, 'info');
+                });
+
+                addLog('✅ SDK已初始化完成', 'success');
+            } catch (error) {
+                addLog(`❌ SDK初始化失败: ${error.message}`, 'error');
+            }
+        }
+
+        function bindEvents() {
+            elements.connectBtn.onclick = connect;
+            elements.disconnectBtn.onclick = disconnect;
+            elements.getPrintersBtn.onclick = getPrinters;
+            elements.clearLogBtn.onclick = clearLog;
+        }
+
+        async function connect() {
+            try {
+                addLog('🔄 正在连接到中间件...', 'info');
+                await twainSDK.connect();
+                addLog('✅ 连接成功！', 'success');
+            } catch (error) {
+                addLog(`❌ 连接失败: ${error.message}`, 'error');
+                addLog('💡 请确保中间件程序正在运行', 'warning');
+            }
+        }
+
+        function disconnect() {
+            twainSDK.disconnect();
+            addLog('🔌 已断开连接', 'info');
+        }
+
+        async function getPrinters() {
+            try {
+                addLog('🔄 正在获取打印机列表...', 'info');
+                const printers = await twainSDK.getPrinters();
+                updatePrinterList(printers);
+                addLog(`✅ 获取打印机列表成功: ${printers.length} 个设备`, 'success');
+                
+                // 显示详细信息
+                if (printers.length > 0) {
+                    printers.forEach((printer, index) => {
+                        addLog(`   ${index + 1}. ${printer.Name} ${printer.IsDefault ? '(默认)' : ''}`, 'info');
+                    });
+                }
+            } catch (error) {
+                addLog(`❌ 获取打印机列表失败: ${error.message}`, 'error');
+            }
+        }
+
+        function updatePrinterList(printers) {
+            elements.printerSelect.innerHTML = '';
+            
+            if (printers.length === 0) {
+                elements.printerSelect.innerHTML = '<option value="">未找到打印机</option>';
+                elements.printerDetails.innerHTML = '';
+                return;
+            }
+
+            printers.forEach((printer, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = `${printer.Name}${printer.IsDefault ? ' (默认)' : ''}`;
+                elements.printerSelect.appendChild(option);
+            });
+
+            // 默认选择第一个打印机
+            if (printers.length > 0) {
+                elements.printerSelect.value = '0';
+                showPrinterDetails(printers[0]);
+            }
+
+            // 添加选择变化事件
+            elements.printerSelect.onchange = function() {
+                const selectedIndex = this.value;
+                if (selectedIndex !== '') {
+                    showPrinterDetails(printers[parseInt(selectedIndex)]);
+                }
+            };
+        }
+
+        function showPrinterDetails(printer) {
+            let details = `
+                <h3>打印机详细信息</h3>
+                <p><strong>名称:</strong> ${printer.Name}</p>
+                <p><strong>是否默认:</strong> ${printer.IsDefault ? '是' : '否'}</p>
+                <p><strong>状态:</strong> ${printer.Status || '未知'}</p>
+                <p><strong>端口:</strong> ${printer.PortName || '未知'}</p>
+                <p><strong>驱动:</strong> ${printer.DriverName || '未知'}</p>
+            `;
+            
+            if (printer.IsNetworkPrinter !== undefined) {
+                details += `<p><strong>网络打印机:</strong> ${printer.IsNetworkPrinter ? '是' : '否'}</p>`;
+            }
+            
+            elements.printerDetails.innerHTML = details;
+        }
+
+        function updateUI(connected) {
+            isConnected = connected && twainSDK.getConnectionState();
+            
+            elements.statusText.textContent = isConnected ? '✅ 已连接' : '❌ 未连接';
+            elements.statusTime.textContent = new Date().toLocaleTimeString();
+            elements.statusBar.className = `status-bar ${isConnected ? 'connected' : 'disconnected'}`;
+            
+            elements.connectBtn.disabled = isConnected;
+            elements.disconnectBtn.disabled = !isConnected;
+            elements.getPrintersBtn.disabled = !isConnected;
+            elements.printerSelect.disabled = !isConnected;
+            
+            if (!isConnected) {
+                elements.printerSelect.innerHTML = '<option value="">请先连接中间件</option>';
+                elements.printerDetails.innerHTML = '';
+            }
+        }
+
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+            
+            elements.logContainer.appendChild(logEntry);
+            elements.logContainer.scrollTop = elements.logContainer.scrollHeight;
+        }
+
+        function clearLog() {
+            elements.logContainer.innerHTML = '';
+            addLog('📝 日志已清空', 'info');
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TWAIN SDK 调试测试</title>
+    <meta charset="UTF-8">
+</head>
+<body>
+    <h1>TWAIN SDK 调试测试</h1>
+    <div id="output"></div>
+    <button id="testBtn">测试SDK方法</button>
+
+    <script src="TwainMiddlewareSDK.js"></script>
+    <script>
+        function log(message) {
+            const output = document.getElementById('output');
+            output.innerHTML += '<p>' + new Date().toLocaleTimeString() + ': ' + message + '</p>';
+            console.log(message);
+        }
+
+        document.getElementById('testBtn').onclick = function() {
+            try {
+                // 测试SDK是否正确加载
+                log('测试SDK加载...');
+                if (typeof TwainMiddlewareSDK === 'undefined') {
+                    log('❌ TwainMiddlewareSDK 类未定义');
+                    return;
+                }
+                log('✅ TwainMiddlewareSDK 类已定义');
+
+                // 创建SDK实例
+                const sdk = new TwainMiddlewareSDK({ debug: true });
+                log('✅ SDK实例创建成功');
+
+                // 测试方法是否存在
+                const methods = ['connect', 'disconnect', 'getScanners', 'getPrinters', 'checkTwainStatus', 'ping'];
+                methods.forEach(method => {
+                    if (typeof sdk[method] === 'function') {
+                        log(`✅ 方法 ${method} 存在`);
+                    } else {
+                        log(`❌ 方法 ${method} 不存在`);
+                    }
+                });
+
+                // 测试连接和getPrinters
+                log('尝试连接到中间件...');
+                sdk.connect().then(() => {
+                    log('✅ 连接成功');
+                    
+                    log('尝试获取打印机列表...');
+                    return sdk.getPrinters();
+                }).then(printers => {
+                    log(`✅ 获取打印机成功，数量: ${printers.length}`);
+                    printers.forEach((printer, index) => {
+                        log(`  ${index + 1}. ${printer.Name || '未命名打印机'}`);
+                    });
+                }).catch(error => {
+                    log(`❌ 错误: ${error.message}`);
+                });
+
+            } catch (error) {
+                log(`❌ 异常: ${error.message}`);
+            }
+        };
+
+        // 页面加载完成后自动测试
+        window.onload = function() {
+            log('页面加载完成，开始调试测试...');
+            document.getElementById('testBtn').click();
+        };
+    </script>
+</body>
+</html> 

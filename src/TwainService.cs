@@ -594,19 +594,156 @@ namespace TwainMiddleware
         {
             try
             {
-                // 这里可以根据需要扩展状态检查逻辑
-                if (printerSettings.IsValid)
+                // 首先检查打印机是否在系统中有效
+                if (!printerSettings.IsValid)
                 {
-                    return "就绪";
+                    return "不可用";
                 }
-                else
-                {
-                    return "离线";
-                }
+
+                // 通过WMI获取详细的打印机状态
+                return GetPrinterStatusFromWMI(printerSettings.PrinterName);
             }
-            catch
+            catch (Exception ex)
             {
+                Logger.Debug("获取打印机状态失败: " + ex.Message);
                 return "未知";
+            }
+        }
+
+        /// <summary>
+        /// 通过WMI获取打印机的详细状态
+        /// </summary>
+        private string GetPrinterStatusFromWMI(string printerName)
+        {
+            try
+            {
+                // 转义打印机名称中的特殊字符
+                string escapedName = printerName.Replace("'", "''").Replace("\\", "\\\\");
+                string query = "SELECT PrinterStatus, DetectedErrorState, WorkOffline FROM Win32_Printer WHERE Name='" + escapedName + "'";
+                
+                using (var searcher = new ManagementObjectSearcher(query))
+                {
+                    foreach (ManagementObject printer in searcher.Get())
+                    {
+                        // 获取各种状态属性
+                        var printerStatus = printer["PrinterStatus"];
+                        var detectedErrorState = printer["DetectedErrorState"];
+                        var workOffline = printer["WorkOffline"];
+
+                        Logger.Debug("打印机 " + printerName + " WMI状态信息:");
+                        Logger.Debug("  PrinterStatus: " + (printerStatus != null ? printerStatus.ToString() : "null"));
+                        Logger.Debug("  DetectedErrorState: " + (detectedErrorState != null ? detectedErrorState.ToString() : "null"));
+                        Logger.Debug("  WorkOffline: " + (workOffline != null ? workOffline.ToString() : "null"));
+
+                        // 检查是否离线工作
+                        if (workOffline != null && (bool)workOffline)
+                        {
+                            return "脱机";
+                        }
+
+                        // 检查检测到的错误状态
+                        if (detectedErrorState != null)
+                        {
+                            uint errorState = Convert.ToUInt32(detectedErrorState);
+                            string errorStatus = GetPrinterErrorStateDescription(errorState);
+                            if (errorStatus != "无错误")
+                            {
+                                return errorStatus;
+                            }
+                        }
+
+                        // 检查打印机状态
+                        if (printerStatus != null)
+                        {
+                            uint status = Convert.ToUInt32(printerStatus);
+                            return GetPrinterStatusDescription(status);
+                        }
+
+                        // 如果所有状态都正常，返回就绪
+                        return "就绪";
+                    }
+                }
+                
+                // 如果找不到打印机，返回离线
+                return "离线";
+            }
+            catch (Exception ex)
+            {
+                Logger.Debug("WMI查询打印机状态失败: " + ex.Message);
+                // 如果WMI查询失败，回退到简单检查
+                return "未知";
+            }
+        }
+
+        /// <summary>
+        /// 获取打印机状态代码的描述
+        /// </summary>
+        private string GetPrinterStatusDescription(uint status)
+        {
+            switch (status)
+            {
+                case 1:
+                    return "其他";
+                case 2:
+                    return "未知";
+                case 3:
+                    return "空闲";
+                case 4:
+                    return "打印中";
+                case 5:
+                    return "预热";
+                case 6:
+                    return "停止打印";
+                case 7:
+                    return "脱机";
+                default:
+                    return "状态代码: " + status;
+            }
+        }
+
+        /// <summary>
+        /// 获取打印机错误状态的描述
+        /// </summary>
+        private string GetPrinterErrorStateDescription(uint errorState)
+        {
+            switch (errorState)
+            {
+                case 0:
+                    return "无错误";
+                case 1:
+                    return "其他错误";
+                case 2:
+                    return "未知错误";
+                case 3:
+                    return "上盖开启";
+                case 4:
+                    return "介质卡纸";
+                case 5:
+                    return "缺纸";
+                case 6:
+                    return "碳粉不足";
+                case 7:
+                    return "输出区域满";
+                case 8:
+                    return "介质问题";
+                case 9:
+                    return "输入托盘缺失";
+                case 10:
+                    return "输出托盘缺失";
+                case 11:
+                    return "标记剂耗尽";
+                case 12:
+                    return "输出托盘几乎满";
+                case 13:
+                    return "标记剂几乎耗尽";
+                case 14:
+                    return "缺少标记剂";
+                case 15:
+                    return "需要清洁";
+                case 16:
+                    return "需要用户干预";
+                default:
+                    return "错误代码: " + errorState;
             }
         }
         

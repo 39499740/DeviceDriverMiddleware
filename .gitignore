@@ -37,8 +37,6 @@ artifacts/
 
 # NuGet包
 *.nupkg
-**/[Pp]ackages/*
-!**/[Pp]ackages/build/
 *.nuget.props
 *.nuget.targets
 

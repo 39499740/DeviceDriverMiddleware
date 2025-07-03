@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 > nul
 echo ========================================
-echo TWAIN扫描仪中间件 简单构建脚本
+echo TWAIN Scanner Middleware Simple Build Script
 echo ========================================
 
 set PROJECT_DIR=%~dp0..
@@ -10,41 +10,41 @@ set OUTPUT_DIR=%PROJECT_DIR%\bin
 set PACKAGES_DIR=%PROJECT_DIR%\packages
 set CSC_PATH=C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe
 
-echo 项目目录: %PROJECT_DIR%
-echo 源码目录: %SRC_DIR%
-echo 输出目录: %OUTPUT_DIR%
-echo 包目录: %PACKAGES_DIR%
-echo 编译器: %CSC_PATH%
+echo Project Directory: %PROJECT_DIR%
+echo Source Directory: %SRC_DIR%
+echo Output Directory: %OUTPUT_DIR%
+echo Packages Directory: %PACKAGES_DIR%
+echo Compiler: %CSC_PATH%
 echo.
 
-REM 检查编译器
+REM Check compiler
 if not exist "%CSC_PATH%" (
-    echo 错误: 未找到C#编译器 %CSC_PATH%
+    echo Error: C# compiler not found at %CSC_PATH%
     pause
     exit /b 1
 )
 
-REM 创建输出目录
+REM Create output directory
 if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
 
-REM 清理旧文件和不需要的文件夹
+REM Clean old files
 if exist "%OUTPUT_DIR%\TwainMiddleware.exe" del "%OUTPUT_DIR%\TwainMiddleware.exe"
 
-REM 清理DEBUG文件夹（不应该在最终发布中）
+REM Clean DEBUG folder
 if exist "%OUTPUT_DIR%\Debug\" (
-    echo 正在清理DEBUG文件夹...
+    echo Cleaning DEBUG folder...
     rd /s /q "%OUTPUT_DIR%\Debug\"
 )
 
-REM 清理SDK文件夹（不应该在最终发布中）
+REM Clean SDK folder
 if exist "%OUTPUT_DIR%\sdk\" (
-    echo 正在清理SDK文件夹...
+    echo Cleaning SDK folder...
     rd /s /q "%OUTPUT_DIR%\sdk\"
 )
 
-echo 正在编译项目...
+echo Compiling project...
 
-REM 编译项目 (包含NTwain库，使用真实TWAIN功能)
+REM Compile project
 "%CSC_PATH%" ^
     /target:winexe ^
     /platform:anycpu ^
@@ -71,48 +71,41 @@ REM 编译项目 (包含NTwain库，使用真实TWAIN功能)
 
 if %ERRORLEVEL% equ 0 (
     echo.
-    echo ✅ 编译成功！
-    echo 📁 输出文件: %OUTPUT_DIR%\TwainMiddleware.exe
+    echo Build successful!
+    echo Output file: %OUTPUT_DIR%\TwainMiddleware.exe
     
-    REM 复制依赖DLL到输出目录
+    REM Copy dependency DLLs to output directory
     echo.
-    echo 正在复制依赖库...
+    echo Copying dependency libraries...
     copy "%PACKAGES_DIR%\Newtonsoft.Json.13.0.3\lib\net45\Newtonsoft.Json.dll" "%OUTPUT_DIR%\" >nul
     copy "%PACKAGES_DIR%\WebSocketSharp-NonPreRelease.1.0.0\lib\net35\websocket-sharp.dll" "%OUTPUT_DIR%\" >nul
     copy "%PACKAGES_DIR%\NTwain.3.7.5\lib\net40\NTwain.dll" "%OUTPUT_DIR%\" >nul
     copy "%PACKAGES_DIR%\PdfiumViewer.2.13.0.0\lib\net20\PdfiumViewer.dll" "%OUTPUT_DIR%\" >nul
     copy "%PACKAGES_DIR%\PdfiumViewer.Native.x86_64.v8-xfa.2018.4.8.256\Build\x64\pdfium.dll" "%OUTPUT_DIR%\" >nul
     
-    REM 复制配置文件
+    REM Copy config file
     copy "%SRC_DIR%\App.config" "%OUTPUT_DIR%\TwainMiddleware.exe.config" >nul
     
-    REM 复制web资源文件到输出目录(打包用)
+    REM Copy web resources
     if not exist "%OUTPUT_DIR%\web" mkdir "%OUTPUT_DIR%\web"
     if exist "%PROJECT_DIR%\web\*" copy "%PROJECT_DIR%\web\*" "%OUTPUT_DIR%\web\" >nul 2>&1
     
-    REM 复制独立测试页面到输出目录（备用）
+    REM Copy standalone test page
     if exist "%PROJECT_DIR%\standalone-test.html" (
         copy "%PROJECT_DIR%\standalone-test.html" "%OUTPUT_DIR%\" >nul
-        echo ✅ 独立测试页面已复制
+        echo Standalone test page copied
     )
     
-    REM 复制使用说明文件
-    if exist "%OUTPUT_DIR%\使用说明.txt" (
-        echo ✅ 使用说明文件已存在
-    )
-    
-    REM HTTP服务器使用内嵌SDK，无需复制SDK文件夹到分发包
-    
-    echo ✅ 依赖库、web资源文件和测试页面复制完成！
+    echo Dependencies, web resources and test page copied successfully!
     echo.
-    echo 🚀 可以运行：%OUTPUT_DIR%\TwainMiddleware.exe
-    echo 📄 右键托盘图标选择"显示测试页面"即可在浏览器中测试
+    echo You can run: %OUTPUT_DIR%\TwainMiddleware.exe
+    echo Right-click tray icon and select "Show test page" to test in browser
     
 ) else (
     echo.
-    echo ❌ 编译失败！
-    echo 错误代码: %ERRORLEVEL%
+    echo Build failed!
+    echo Error code: %ERRORLEVEL%
 )
 
 echo.
-pause 
+pause

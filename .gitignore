@@ -138,7 +138,6 @@ appsettings.Production.json
 appsettings.Development.json
 
 # 依赖包文件
-packages/
 
 # IDE 和编辑器文件
 Thumbs.db
